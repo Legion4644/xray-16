@@ -13,11 +13,41 @@ public:
 
     bool Similar(dx11ConstantBuffer& _in);
     ID3DBuffer* GetBuffer() { return m_pBuffer; }
-    pcstr GetBufferName() const { return m_strBufferName.c_str(); }
     void Flush(u32 context_id);
 
-    // Context registry the buffer belongs to
-    u32 m_context_id{ u32(-1) };
+    // CB Slot Decoding Helpers
+    // X-Ray encodes CB slots as: bits 0-3 = buffer index, bits 4-6 = shader type
+    // See r_constants.h for CB_Buffer* enums
+    static u32 DecodeShaderType(u32 encodedSlot)
+    {
+        return encodedSlot & 0x70; // CB_BufferTypeMask
+    }
+
+    static u32 DecodeBufferIndex(u32 encodedSlot)
+    {
+        return encodedSlot & 0xF; // CB_BufferIndexMask
+    }
+
+    // Returns the actual HLSL register index (b0, b1, b2, etc.)
+    static u32 DecodeBindingSlot(u32 encodedSlot)
+    {
+        return DecodeBufferIndex(encodedSlot);
+    }
+
+    // Get shader type name for debugging
+    static const char* GetShaderTypeName(u32 shaderType)
+    {
+        switch (shaderType)
+        {
+        case 0x10: return "PS"; // CB_BufferPixelShader
+        case 0x20: return "VS"; // CB_BufferVertexShader
+        case 0x30: return "GS"; // CB_BufferGeometryShader
+        case 0x40: return "HS"; // CB_BufferHullShader
+        case 0x50: return "DS"; // CB_BufferDomainShader
+        case 0x60: return "CS"; // CB_BufferComputeShader
+        default: return "Unknown";
+        }
+    }
 
     //	Set copy data into constant buffer
     //	Plain buffer member
