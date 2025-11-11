@@ -140,11 +140,9 @@ void UIPass::Execute(ng::RenderContext& ctx, const framegraph::FrameGraph& fg) {
         g_pGamePersistent->OnRenderInGameUI();
         Msg("  [UIPass] After in-game UI: %zu batches", m_uiCollector->GetBatches().size());
 
-        // ═══════════════════════════════════════════════════════
-        //  COLLECT CURSOR (must be last so it renders on top)
-        // ═══════════════════════════════════════════════════════
-        g_pGamePersistent->OnRenderCursor();
-        Msg("  [UIPass] After cursor: %zu batches", m_uiCollector->GetBatches().size());
+        // NOTE: Cursor is no longer collected here!
+        // Cursor rendering has been moved to CursorPass (which executes after TextPass)
+        // This ensures cursor renders on top of all UI elements AND text/fonts
 
         // Restore original renderer
         GEnv.UIRender = oldRenderer;
