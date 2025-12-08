@@ -83,12 +83,12 @@ PS_OUTPUT main(PS_INPUT input)
     // Sample textures using SM6 bindless (ResourceDescriptorHeap)
     float4 diffuseSample = SampleDiffuse(mat, input.texcoord);
 
-    // DEBUG: Highlight black samples in CYAN to see where texture returns black
-    //float luminance = dot(diffuseSample.rgb, float3(0.299, 0.587, 0.114));
-    //if (luminance < 0.05) {
-    //    output.color = float4(0, 1, 1, 1); // CYAN = texture returned black
-    //    return output;
-    //}
+    // DEBUG: Visualize material ID (drawIndex) - use brighter colors
+    //float r = (input.materialID % 7) / 6.0;
+    //float g = (input.materialID % 5) / 4.0 + 0.3;
+    //float b = (input.materialID % 3) / 2.0 + 0.5;
+    //output.color = float4(r, g, b, 1);
+    //return output;
 
     // Alpha test
     if (mat.flags & MAT_FLAG_ALPHA_TEST)
