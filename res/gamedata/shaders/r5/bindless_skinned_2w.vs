@@ -1,5 +1,6 @@
 // bindless_skinned_2w.vs
-// GPU-driven skinned mesh shader for 2W_HQ format (44 bytes, 2-bone blend)
+// GPU-driven skinned mesh shader for 2W HQ format (44 bytes, 2-bone blend)
+// Weight formula: lerp(bone_0, bone_1, N.w) = bone_0 * (1 - N.w) + bone_1 * N.w
 
 #define SM_6_0
 #include "common.h"
@@ -9,10 +10,10 @@
 struct VS_INPUT_2W
 {
     float4 P  : POSITION;   // FLOAT4: position
-    float4 N  : NORMAL;     // D3DCOLOR: normal, .w = weight
+    float4 N  : NORMAL;     // D3DCOLOR: normal, .w = lerp weight
     float4 T  : TANGENT;    // D3DCOLOR: tangent
     float4 B  : BINORMAL;   // D3DCOLOR: binormal
-    float4 tc : TEXCOORD0;  // FLOAT4: .xy = UV, .zw = bone indices
+    float4 tc : TEXCOORD0;  // FLOAT4: .xy = UV, .zw = bone indices 0,1
 };
 
 struct VS_OUTPUT
@@ -34,11 +35,14 @@ VS_OUTPUT main(VS_INPUT_2W v, uint instanceID : SV_InstanceID)
     float3 T = unpack_d3dcolor_normal(v.T.xyz);
     float3 B = unpack_d3dcolor_normal(v.B.xyz);
 
+    // Bone indices from tc.zw
     int id_0 = int(v.tc.z);
     int id_1 = int(v.tc.w);
+
     float3x4 bone_0 = get_bone(id_0, instanceID);
     float3x4 bone_1 = get_bone(id_1, instanceID);
 
+    // 2W uses lerp: result = bone_0 * (1-w) + bone_1 * w
     float w = v.N.w;
     float3x4 bone = lerp(bone_0, bone_1, w);
 
