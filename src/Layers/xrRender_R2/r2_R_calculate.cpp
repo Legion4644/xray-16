@@ -8,7 +8,7 @@
 #include "Layers/xrRender/xrRender_console.h"
 #endif
 
-namespace xray::render::RENDER_NAMESPACE
+namespace xray::render::fg
 {
 float g_fSCREEN;
 
@@ -173,4 +173,4 @@ void CRender::Calculate()
     else
         r_sun.run();
 }
-} // namespace xray::render::RENDER_NAMESPACE
+} // namespace xray::render::fg

@@ -3,7 +3,7 @@
 
 #include "Layers/xrRender/BufferUtils.h"
 
-namespace xray::render::RENDER_NAMESPACE
+namespace xray::render::fg
 {
 dx11ConstantBuffer::~dx11ConstantBuffer()
 {
@@ -138,4 +138,4 @@ void dx11ConstantBuffer::Flush(u32 context_id)
         m_bChanged = false;
     }
 }
-} // namespace xray::render::RENDER_NAMESPACE
+} // namespace xray::render::fg
