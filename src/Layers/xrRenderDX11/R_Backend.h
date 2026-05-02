@@ -607,5 +607,4 @@ public:
 };
 #pragma warning(pop)
 
-#define RCache RImplementation.get_imm_context().cmd_list
 } // namespace xray::render::fg
