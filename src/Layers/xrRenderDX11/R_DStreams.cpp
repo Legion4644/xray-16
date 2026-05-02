@@ -42,7 +42,6 @@ void _VertexStream::Destroy()
 void* _VertexStream::Lock(u32 vl_Count, u32 Stride, u32& vOffset)
 {
 #ifdef DEBUG
-    PGO(Msg("PGO:VB_LOCK:%d", vl_Count));
     VERIFY(0 == dbg_lock);
     dbg_lock++;
 #endif
@@ -80,7 +79,6 @@ void* _VertexStream::Lock(u32 vl_Count, u32 Stride, u32& vOffset)
 void _VertexStream::Unlock(u32 Count, u32 Stride)
 {
 #ifdef DEBUG
-    PGO(Msg("PGO:VB_UNLOCK:%d", Count));
     VERIFY(1 == dbg_lock);
     dbg_lock--;
 #endif
@@ -127,7 +125,6 @@ void _IndexStream::Destroy()
 
 u16* _IndexStream::Lock(u32 Count, u32& vOffset)
 {
-    PGO(Msg("PGO:IB_LOCK:%d", Count));
     vOffset = 0;
 
     // Ensure there is enough space in the VB for this data
@@ -153,7 +150,6 @@ u16* _IndexStream::Lock(u32 Count, u32& vOffset)
 
 void _IndexStream::Unlock(u32 RealCount)
 {
-    PGO(Msg("PGO:IB_UNLOCK:%d", RealCount));
     mPosition += RealCount;
 #ifdef XR_PLATFORM_WEB
     pIB.Unmap(RealCount * sizeof(u16));
