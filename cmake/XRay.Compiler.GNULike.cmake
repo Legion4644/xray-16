@@ -13,7 +13,7 @@ if (APPLE)
 endif()
 
 # Redirecting the default installation path /usr/local to /usr no need to use -DCMAKE_INSTALL_PREFIX =/usr
-if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+if (NOT ANDROID AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set(CMAKE_INSTALL_PREFIX "/usr")
 endif()
 

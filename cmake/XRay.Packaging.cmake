@@ -11,7 +11,7 @@ set(CPACK_SOURCE_IGNORE_FILES "/.gitattributes")
 set(CPACK_RESOURCE_FILE_README ${PROJECT_SOURCE_DIR}/README.md)
 set(CPACK_RESOURCE_FILE_LICENSE ${PROJECT_SOURCE_DIR}/License.txt)
 
-if (UNIX)
+if (UNIX AND NOT ANDROID)
     # Try to find specific OS files to determine type of linux distribution
     find_file(FEDORA_FOUND fedora-release PATHS /etc)
     find_file(REDHAT_FOUND redhat-release inittab.RH PATHS /etc)
