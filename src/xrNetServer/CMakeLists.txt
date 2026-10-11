@@ -55,7 +55,7 @@ target_include_directories(xrNetServer
 
 target_include_directories(xrNetServer
     PUBLIC
-    "${CMAKE_SOURCE_DIR}/Externals/GameNetworkingSockets/include"
+    "${XRAY_SOURCE_DIR}/Externals/GameNetworkingSockets/include"
 )
 
 target_link_libraries(xrNetServer

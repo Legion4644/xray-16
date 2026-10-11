@@ -7,7 +7,7 @@ endif()
 set(Protobuf_FOUND TRUE)
 set(PROTOBUF_FOUND TRUE)
 
-set(Protobuf_INCLUDE_DIR  "${CMAKE_SOURCE_DIR}/Externals/protobuf/src")
+set(Protobuf_INCLUDE_DIR  "${XRAY_SOURCE_DIR}/Externals/protobuf/src")
 set(Protobuf_INCLUDE_DIRS "${Protobuf_INCLUDE_DIR}")
 set(PROTOBUF_INCLUDE_DIRS "${Protobuf_INCLUDE_DIR}")
 
