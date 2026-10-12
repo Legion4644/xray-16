@@ -26,8 +26,10 @@ namespace render_r4
 XRRENDER_R4_API RendererModule* GetRendererModule();
 }
 #endif
+#if !defined(XR_PLATFORM_ANDROID)
 namespace render_gl
 {
 XRRENDER_GL_API RendererModule* GetRendererModule();
 }
+#endif
 } // namespace xray::render

@@ -26,7 +26,9 @@ std::array<RendererModule*, 2> s_render_modules =
 #ifdef XR_PLATFORM_WINDOWS
     xray::render::render_r4::GetRendererModule(),
 #endif
+#if !defined(XR_PLATFORM_ANDROID)
     xray::render::render_gl::GetRendererModule(),
+#endif
 };
 
 struct tracy_raii

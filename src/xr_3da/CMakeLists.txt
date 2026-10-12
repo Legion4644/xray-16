@@ -1,17 +1,25 @@
-add_executable(xr_3da)
+if (ANDROID)
+    add_library(xr_3da SHARED)
+else()
+    add_executable(xr_3da)
+endif()
 
 target_sources(xr_3da PRIVATE
     entry_point.cpp
     stdafx.h
-
-    resource.h
-    resource.rc
-
-    splash_oxr.bmp
-    stalker_cop.ico
-    stalker_cs.ico
-    stalker_soc.ico
 )
+
+if (NOT ANDROID)
+    target_sources(xr_3da PRIVATE
+        resource.h
+        resource.rc
+
+        splash_oxr.bmp
+        stalker_cop.ico
+        stalker_cs.ico
+        stalker_soc.ico
+    )
+endif()
 
 set_property(
     DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -29,14 +37,32 @@ target_link_libraries(xr_3da
     xrCore
     xrAPI
     xrEngine
-    xrRender_GL
+    $<$<NOT:$<BOOL:${ANDROID}>>:xrRender_GL>
     xrGame
+    $<$<BOOL:${ANDROID}>:log>
+    $<$<BOOL:${ANDROID}>:android>
+    $<$<BOOL:${ANDROID}>:EGL>
+    $<$<BOOL:${ANDROID}>:GLESv3>
+    $<$<BOOL:${ANDROID}>:OpenSLES>
+    $<$<BOOL:${ANDROID}>:z>
 )
 
-set_target_properties(xr_3da PROPERTIES
-    PREFIX ""
-)
+if (NOT ANDROID)
+    set_target_properties(xr_3da PROPERTIES
+        PREFIX ""
+    )
+endif()
 
-install(TARGETS xr_3da RUNTIME
-    DESTINATION "${CMAKE_INSTALL_BINDIR}"
-)
+if (ANDROID)
+    target_compile_definitions(xr_3da PRIVATE SDL_MAIN_HANDLED)
+endif()
+
+if (ANDROID)
+    install(TARGETS xr_3da LIBRARY
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    )
+else()
+    install(TARGETS xr_3da RUNTIME
+        DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    )
+endif()
