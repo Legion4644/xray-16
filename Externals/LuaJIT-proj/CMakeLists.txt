@@ -306,8 +306,23 @@ if (TARGET_LJARCH STREQUAL "ppc")
     endif()
 endif()
 
-set(HOST_ACFLAGS "${CMAKE_C_FLAGS} ${CCOPTIONS} ${TARGET_ARCH}")
-set(HOST_ALDFLAGS "${CMAKE_C_FLAGS}")
+# minilua/buildvm must run on the build host. When cross-compiling (Android NDK),
+# do not pass the target compiler or its flags into those host tools.
+if (CMAKE_CROSSCOMPILING)
+    string(JOIN " " _LUAJIT_XCFLAGS_STR ${XCFLAGS})
+    set(HOST_ACFLAGS "${_LUAJIT_XCFLAGS_STR} ${TARGET_ARCH} -DLUAJIT_OS=LUAJIT_OS_LINUX")
+    set(HOST_ALDFLAGS "")
+    find_program(LUAJIT_HOST_C_COMPILER NAMES cc gcc clang REQUIRED)
+    set(LUAJIT_HOST_CMAKE_ARGS
+        -DCMAKE_C_COMPILER=${LUAJIT_HOST_C_COMPILER}
+        -DCMAKE_TOOLCHAIN_FILE=
+        -DCMAKE_C_FLAGS=
+    )
+else()
+    set(HOST_ACFLAGS "${CMAKE_C_FLAGS} ${CCOPTIONS} ${TARGET_ARCH}")
+    set(HOST_ALDFLAGS "${CMAKE_C_FLAGS}")
+    set(LUAJIT_HOST_CMAKE_ARGS)
+endif()
 
 string(APPEND TARGET_XCFLAGS " -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -U_FORTIFY_SOURCE")
 
@@ -335,6 +350,7 @@ add_custom_command(
         -B${MINILUA_BINARY_DIR}
         -G${CMAKE_GENERATOR}
         -S${CMAKE_CURRENT_SOURCE_DIR}/HostBuildTools/minilua
+        ${LUAJIT_HOST_CMAKE_ARGS}
         -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
         -DCMAKE_VERBOSE_MAKEFILE=${CMAKE_VERBOSE_MAKEFILE}
         -DCMAKE_BUILD_TYPE=Release
@@ -368,6 +384,7 @@ add_custom_command(
         -B${BUILDVM_BINARY_DIR}
         -G${CMAKE_GENERATOR}
         -S${CMAKE_CURRENT_SOURCE_DIR}/HostBuildTools/buildvm
+        ${LUAJIT_HOST_CMAKE_ARGS}
         -DCMAKE_VERBOSE_MAKEFILE=${CMAKE_VERBOSE_MAKEFILE}
         -DCMAKE_BUILD_TYPE=Release
         -DLUAJIT_DIR=${LUAJIT_DIR}
