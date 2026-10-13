@@ -137,8 +137,20 @@ set(CCOPTIONS "${CCOPT};${XCFLAGS}")
 
 target_compile_options(xrLuaJIT PRIVATE ${CCOPTIONS})
 
+# When cross-compiling, the toolchain may pass the target through
+# CMAKE_<LANG>_COMPILER_TARGET instead of CMAKE_C_FLAGS (e.g. the Android NDK
+# sets the -target triple this way). Reproduce it here, otherwise the probe
+# below runs with the host default target and detects the wrong architecture.
+set(TESTARCH_FLAGS ${CCOPTIONS})
+if (CMAKE_C_COMPILER_TARGET)
+    list(APPEND TESTARCH_FLAGS "--target=${CMAKE_C_COMPILER_TARGET}")
+endif()
+if (CMAKE_SYSROOT)
+    list(APPEND TESTARCH_FLAGS "--sysroot=${CMAKE_SYSROOT}")
+endif()
+
 execute_process(
-    COMMAND ${CMAKE_C_COMPILER} ${CCOPTIONS} -E lj_arch.h -dM
+    COMMAND ${CMAKE_C_COMPILER} ${TESTARCH_FLAGS} -E lj_arch.h -dM
     WORKING_DIRECTORY "${LUAJIT_DIR}"
     OUTPUT_VARIABLE TESTARCH_OUTPUT
     ERROR_VARIABLE TESTARCH_ERROR
