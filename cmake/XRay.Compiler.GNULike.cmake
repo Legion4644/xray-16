@@ -25,6 +25,7 @@ endif()
 
 if (ANDROID)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+    add_compile_options(-fPIC)
     set(XRAY_USE_DEFAULT_CXX_LIB ON)
 endif()
 
