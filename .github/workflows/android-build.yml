@@ -10,9 +10,11 @@ on:
 
 jobs:
   android-arm64:
-    name: Android arm64-v8a API 26 (NDK)
+    name: Android arm64-v8a API 26 (NDK + APK)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
+    permissions:
+      contents: write
     env:
       CFLAGS: "-w"
       CXXFLAGS: "-w"
@@ -49,15 +51,84 @@ jobs:
       - name: Build
         run: cmake --build build-android --config ReleaseMasterGold --parallel 4
 
-      - name: Collect libraries
+      - name: Collect native libraries
         run: |
           mkdir -p dist/arm64-v8a
           find build-android bin -type f \( -name '*.so' -o -name '*.a' \) -print -exec cp -n {} dist/arm64-v8a/ \; || true
           ls -la dist/arm64-v8a || true
 
-      - name: Upload Android libraries
+      - name: Upload native libraries
         uses: actions/upload-artifact@v4
         with:
           name: android-arm64-v8a
           path: dist/arm64-v8a
           if-no-files-found: warn
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK platform and build-tools
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Prepare jniLibs
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          set -e
+          DEST=android/app/src/main/jniLibs/arm64-v8a
+          mkdir -p "$DEST"
+
+          # Engine and SDL produced by our CMake build.
+          cp "$(find build-android -name 'libxr_3da.so' | head -n1)" "$DEST/"
+          cp "$(find build-android -name 'libSDL2.so' | head -n1)" "$DEST/"
+
+          # C++ runtime required by the engine and SDL (ANDROID_STL=c++_shared).
+          cp "${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" "$DEST/"
+
+          ls -la "$DEST"
+
+      - name: Build debug APK
+        working-directory: android
+        run: gradle --no-daemon assembleDebug
+
+      - name: Rename APK
+        run: |
+          mkdir -p apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk apk/xray-cop-debug.apk
+          ls -la apk
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-apk
+          path: apk/xray-cop-debug.apk
+          if-no-files-found: error
+
+      - name: Publish debug APK to Releases
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-debug
+          name: Android debug build
+          body: |
+            Automated debug APK built from the `android-port` branch.
+
+            Install it on an arm64-v8a device, copy the game folder to
+            `/sdcard/XRay/gamedata`, then open the app and grant all-files
+            access. Logs are written to `/sdcard/XRay/logs/`.
+          files: apk/xray-cop-debug.apk
+          prerelease: true
+          fail_on_unmatched_files: true
