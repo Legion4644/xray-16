@@ -11,6 +11,13 @@
 #include <getopt.h>
 #endif
 
+#if defined(XR_PLATFORM_ANDROID)
+// Including SDL_main.h (without SDL_MAIN_HANDLED) turns our main() into the
+// exported SDL_main symbol that SDLActivity starts from Java.
+#include <SDL_main.h>
+#include "android_bootstrap.h"
+#endif
+
 // Always request high performance GPU
 extern "C"
 {
@@ -83,6 +90,12 @@ int APIENTRY WinMain(HINSTANCE inst, HINSTANCE prevInst, char* commandLine, int 
 int main(int argc, char *argv[])
 {
     int result = EXIT_FAILURE;
+
+#if defined(XR_PLATFORM_ANDROID)
+    // Must run before the engine initializes its filesystem and log: sets up
+    // the data directory, fsgame.ltx, stdio redirection and crash handlers.
+    xray_android::EarlyInit();
+#endif
 
     try
     {

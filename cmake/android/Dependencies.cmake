@@ -16,8 +16,10 @@ set(CMAKE_UNITY_BUILD OFF)
 # ---------------------------------------------------------------------------
 # SDL2
 # ---------------------------------------------------------------------------
-set(SDL_SHARED OFF)
-set(SDL_STATIC ON)
+# SDL2 must be a shared library: SDLActivity.java loads "SDL2" at startup and
+# its native JNI entry points (nativeRunMain) live there.
+set(SDL_SHARED ON)
+set(SDL_STATIC OFF)
 set(SDL_TEST OFF)
 set(SDL_TESTS OFF)
 set(SDL2_DISABLE_INSTALL ON)

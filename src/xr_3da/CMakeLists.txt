@@ -9,6 +9,13 @@ target_sources(xr_3da PRIVATE
     stdafx.h
 )
 
+if (ANDROID)
+    target_sources(xr_3da PRIVATE
+        android_bootstrap.cpp
+        android_bootstrap.h
+    )
+endif()
+
 if (NOT ANDROID)
     target_sources(xr_3da PRIVATE
         resource.h
@@ -39,6 +46,7 @@ target_link_libraries(xr_3da
     xrEngine
     $<$<NOT:$<BOOL:${ANDROID}>>:xrRender_GL>
     xrGame
+    $<$<BOOL:${ANDROID}>:SDL2::SDL2>
     $<$<BOOL:${ANDROID}>:log>
     $<$<BOOL:${ANDROID}>:android>
     $<$<BOOL:${ANDROID}>:EGL>
@@ -51,10 +59,6 @@ if (NOT ANDROID)
     set_target_properties(xr_3da PROPERTIES
         PREFIX ""
     )
-endif()
-
-if (ANDROID)
-    target_compile_definitions(xr_3da PRIVATE SDL_MAIN_HANDLED)
 endif()
 
 if (ANDROID)
