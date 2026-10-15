@@ -1,0 +1,8 @@
+# Gradle / Android build outputs
+.gradle/
+build/
+local.properties
+app/build/
+
+# Native libraries are copied here by CI, never committed.
+app/src/main/jniLibs/**/*.so
