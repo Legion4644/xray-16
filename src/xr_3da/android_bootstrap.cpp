@@ -17,7 +17,8 @@
 #include <unistd.h>
 
 #include <android/log.h>
-#include <execinfo.h>
+#include <dlfcn.h>
+#include <unwind.h>
 #include <jni.h>
 
 #define XRAY_ANDROID_LOG_TAG "xray-cop"
@@ -29,38 +30,34 @@ namespace
 std::string g_rootDir;
 std::string g_logDir;
 
-// The default fsgame.ltx shipped with the engine, with a single change:
-// $app_data_root$ points directly at $fs_root$ instead of the "_appdata_"
-// subfolder, so that logs and saves live in /sdcard/XRay/logs and
-// /sdcard/XRay/savedgames next to the gamedata the user copies in.
 const char* const kFsgameContent =
     ";abbreviation           = recurs|notif|  root|                  add|        ext|            description\n"
     "$app_data_root$         = true|  false| $fs_root$|\n"
     "$arch_dir$              = false| false| $fs_root$\n"
-    "$game_arch_mp$          = false| false| $fs_root$|            mp\\\n"
-    "$arch_dir_levels$       = false| false| $fs_root$|            levels\\\n"
-    "$arch_dir_resources$    = false| false| $fs_root$|            resources\\\n"
-    "$arch_dir_localization$ = false| false| $fs_root$|            localization\\\n"
-    "$arch_dir_patches$      = false| true|  $fs_root$|            patches\\\n"
-    "$game_data$             = false| true|  $fs_root$|            gamedata\\\n"
-    "$game_ai$               = true|  false| $game_data$|          ai\\\n"
-    "$game_spawn$            = true|  false| $game_data$|          spawns\\\n"
-    "$game_levels$           = true|  false| $game_data$|          levels\\\n"
-    "$game_meshes$           = true|  true|  $game_data$|          meshes\\|       *.ogf;*.omf|   Game Object files\n"
-    "$game_anims$            = true|  true|  $game_data$|          anims\\|        *.anm;*.anms|  Animation files\n"
-    "$game_dm$               = true|  true|  $game_data$|          meshes\\|       *.dm|          Detail Model files\n"
-    "$game_shaders$          = true|  true|  $game_data$|          shaders\\\n"
-    "$game_sounds$           = true|  true|  $game_data$|          sounds\\\n"
-    "$game_textures$         = true|  true|  $game_data$|          textures\\\n"
-    "$game_config$           = true|  false| $game_data$|          configs\\\n"
-    "$game_weathers$         = true|  false| $game_config$|        environment\\weathers\n"
-    "$game_weather_effects$  = true|  false| $game_config$|        environment\\weather_effects\n"
-    "$textures$              = true|  true|  $game_data$|          textures\\\n"
+    "$game_arch_mp$          = false| false| $fs_root$|            mp\n"
+    "$arch_dir_levels$       = false| false| $fs_root$|            levels\n"
+    "$arch_dir_resources$    = false| false| $fs_root$|            resources\n"
+    "$arch_dir_localization$ = false| false| $fs_root$|            localization\n"
+    "$arch_dir_patches$      = false| true|  $fs_root$|            patches\n"
+    "$game_data$             = false| true|  $fs_root$|            gamedata\n"
+    "$game_ai$               = true|  false| $game_data$|          ai\n"
+    "$game_spawn$            = true|  false| $game_data$|          spawns\n"
+    "$game_levels$           = true|  false| $game_data$|          levels\n"
+    "$game_meshes$           = true|  true|  $game_data$|          meshes|       *.ogf;*.omf|   Game Object files\n"
+    "$game_anims$            = true|  true|  $game_data$|          anims|        *.anm;*.anms|  Animation files\n"
+    "$game_dm$               = true|  true|  $game_data$|          meshes|       *.dm|          Detail Model files\n"
+    "$game_shaders$          = true|  true|  $game_data$|          shaders\n"
+    "$game_sounds$           = true|  true|  $game_data$|          sounds\n"
+    "$game_textures$         = true|  true|  $game_data$|          textures\n"
+    "$game_config$           = true|  false| $game_data$|          configs\n"
+    "$game_weathers$         = true|  false| $game_config$|        environmentweathers\n"
+    "$game_weather_effects$  = true|  false| $game_config$|        environmentweather_effects\n"
+    "$textures$              = true|  true|  $game_data$|          textures\n"
     "$level$                 = false| false| $game_levels$\n"
-    "$game_scripts$          = true|  false| $game_data$|          scripts\\|      *.script|      Game script files\n"
-    "$logs$                  = true|  false| $app_data_root$|      logs\\\n"
-    "$screenshots$           = true|  false| $app_data_root$|      screenshots\\\n"
-    "$game_saves$            = true|  false| $app_data_root$|      savedgames\\\n"
+    "$game_scripts$          = true|  false| $game_data$|          scripts|      *.script|      Game script files\n"
+    "$logs$                  = true|  false| $app_data_root$|      logs\n"
+    "$screenshots$           = true|  false| $app_data_root$|      screenshots\n"
+    "$game_saves$            = true|  false| $app_data_root$|      savedgames\n"
     "$downloads$             = false| false| $app_data_root$\n";
 
 bool ensureDir(const std::string& path)
@@ -107,8 +104,6 @@ bool dirWritable(const std::string& path)
 
 std::string resolveRoot()
 {
-    // MANAGE_EXTERNAL_STORAGE grants access to the shared storage. "/sdcard"
-    // is a stable symlink to the primary external volume on all devices.
     const char* const candidates[] = { "/sdcard/XRay", "/storage/emulated/0/XRay" };
     for (const char* candidate : candidates)
     {
@@ -182,6 +177,23 @@ const char* signalName(int sig)
     }
 }
 
+struct BacktraceState {
+    void** current;
+    void** end;
+};
+
+static _Unwind_Reason_Code UnwindCallback(struct _Unwind_Context* context, void* arg)
+{
+    BacktraceState* state = static_cast<BacktraceState*>(arg);
+    uintptr_t pc = _Unwind_GetIP(context);
+    if (pc)
+    {
+        if (state->current == state->end) return _URC_END_OF_STACK;
+        *state->current++ = reinterpret_cast<void*>(pc);
+    }
+    return _URC_NO_REASON;
+}
+
 void writeCrashLog(int sig, siginfo_t* info)
 {
     if (g_logDir.empty())
@@ -192,7 +204,7 @@ void writeCrashLog(int sig, siginfo_t* info)
     if (fd < 0)
         return;
 
-    char buffer[64];
+    char buffer[256];
     const char* const header = "\n===== NATIVE CRASH =====\n";
     write(fd, header, strlen(header));
 
@@ -206,24 +218,22 @@ void writeCrashLog(int sig, siginfo_t* info)
     write(fd, traceHeader, strlen(traceHeader));
 
     void* frames[64];
-    const int count = backtrace(frames, 64);
-    char** symbols = backtrace_symbols(frames, count);
-    if (symbols)
+    BacktraceState state = {frames, frames + 64};
+    _Unwind_Backtrace(UnwindCallback, &state);
+    const int count = static_cast<int>(state.current - frames);
+
+    for (int i = 0; i < count; ++i)
     {
-        for (int i = 0; i < count; ++i)
+        Dl_info dlInfo;
+        if (dladdr(frames[i], &dlInfo) && dlInfo.dli_sname)
         {
-            write(fd, symbols[i], strlen(symbols[i]));
-            write(fd, "\n", 1);
+            n = snprintf(buffer, sizeof(buffer), "  %p %s\n", frames[i], dlInfo.dli_sname);
         }
-        free(symbols);
-    }
-    else
-    {
-        for (int i = 0; i < count; ++i)
+        else
         {
             n = snprintf(buffer, sizeof(buffer), "  %p\n", frames[i]);
-            write(fd, buffer, n);
         }
+        write(fd, buffer, n);
     }
 
     const char* const footer = "===== END NATIVE CRASH =====\n";
@@ -237,8 +247,6 @@ void crashHandler(int sig, siginfo_t* info, void* /*ucontext*/)
 {
     writeCrashLog(sig, info);
 
-    // Restore the default disposition and re-raise so Android still generates
-    // its own tombstone and the process terminates with the right status.
     signal(sig, SIG_DFL);
     raise(sig);
 }
@@ -264,8 +272,6 @@ void EarlyInit()
     g_rootDir = resolveRoot();
     if (g_rootDir.empty())
     {
-        // Without all-files access we still want to run and tell the user what
-        // to do, so fall back to the app-private directory.
         const char* internal = getenv("XRAY_ANDROID_INTERNAL_DIR");
         g_rootDir = internal ? internal : "/data/local/tmp/XRay";
         ensureDir(g_rootDir);
@@ -277,14 +283,10 @@ void EarlyInit()
     ensureDir(g_rootDir + "/savedgames");
     ensureDir(g_rootDir + "/screenshots");
 
-    // Install handlers before touching anything else, to catch early crashes.
     installCrashHandlers();
 
-    // Redirect stdio first so that all following messages land in the file.
     redirectStdio(g_logDir);
 
-    // The engine resolves $fs_root$ from the current working directory when
-    // fsgame.ltx is found there.
     if (chdir(g_rootDir.c_str()) != 0)
         XRAY_ANDROID_LOGE("chdir(%s) failed: %s", g_rootDir.c_str(), strerror(errno));
 
@@ -302,7 +304,6 @@ const std::string& GetLogDir()
 }
 } // namespace xray_android
 
-// Called from the Java overlay to know where to read the log from.
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_xray_cop_XRayActivity_nativeGetLogDir(JNIEnv* env, jclass /*clazz*/)
 {
