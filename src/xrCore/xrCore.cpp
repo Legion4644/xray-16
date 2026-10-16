@@ -8,6 +8,7 @@
 #include <objbase.h>
 #pragma comment(lib, "winmm.lib")
 #elif defined(XR_PLATFORM_POSIX)
+#include <cstdio>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <pwd.h>
@@ -189,6 +190,13 @@ void xrCore::PrintBuildInfo()
 void xrCore::Initialize(pcstr _ApplicationName, pcstr commandLine, bool init_fs, pcstr fs_fname, bool plugin)
 {
     ZoneScoped;
+#if defined(XR_PLATFORM_ANDROID)
+    fprintf(stdout,
+        "[xrCore::Initialize] args: _ApplicationName=%s commandLine=%s init_fs=%d fs_fname=%s plugin=%d\n",
+        _ApplicationName ? _ApplicationName : "(null)", commandLine ? commandLine : "(null)",
+        init_fs ? 1 : 0, fs_fname ? fs_fname : "(null)", plugin ? 1 : 0);
+    fflush(stdout);
+#endif
     xr_strcpy(ApplicationName, _ApplicationName);
     PrintBuildInfo();
 
@@ -257,15 +265,24 @@ void xrCore::Initialize(pcstr _ApplicationName, pcstr commandLine, bool init_fs,
         DWORD sz_comp = sizeof(CompName);
         GetComputerName(CompName, &sz_comp);
 #elif defined(XR_PLATFORM_POSIX)
+        UserName[0] = '\0';
         uid_t uid = geteuid();
         struct passwd *pw = getpwuid(uid);
         if (pw)
         {
-            strncpy(UserName, pw->pw_gecos, sizeof(UserName) - 1);
-            if (UserName[0] == '\0')
-                strncpy(UserName, pw->pw_name, sizeof(UserName) - 1);
+            // On Android/Bionic pw_gecos and pw_name may be null, so copy only
+            // from the first field that is actually present.
+            pcstr const sources[] = { pw->pw_gecos, pw->pw_name };
+            for (pcstr source : sources)
+            {
+                if (source && source[0])
+                {
+                    xr_strcpy(UserName, sizeof(UserName), source);
+                    break;
+                }
+            }
         }
-        else
+        if (UserName[0] == '\0')
             Msg("! Failed to get user name");
 
         if (gethostname(CompName, sizeof(CompName)) == 0)
@@ -295,6 +312,12 @@ void xrCore::Initialize(pcstr _ApplicationName, pcstr commandLine, bool init_fs,
             xr_strcpy(UserName, sizeof(UserName), "Player");
         if (!is_usable_name(CompName))
             xr_strcpy(CompName, sizeof(CompName), "Computer");
+
+#if defined(XR_PLATFORM_ANDROID)
+        fprintf(stdout, "[xrCore::Initialize] resolved: ApplicationPath=%s WorkingPath=%s UserName=%s CompName=%s\n",
+            ApplicationPath, WorkingPath, UserName, CompName);
+        fflush(stdout);
+#endif
 
 #ifdef DEBUG
         Msg("UserName: %s", UserName);
