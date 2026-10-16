@@ -79,9 +79,13 @@ jobs:
           sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
+           run: |
+             set -e
+             curl -fsSL -o /tmp/gradle-8.7.zip https://services.gradle.org/distributions/gradle-8.7-bin.zip
+             mkdir -p "$HOME/gradle-dist"
+             unzip -q /tmp/gradle-8.7.zip -d "$HOME/gradle-dist"
+             echo "$HOME/gradle-dist/gradle-8.7/bin" >> "$GITHUB_PATH"
+             "$HOME/gradle-dist/gradle-8.7/bin/gradle" --version
 
       - name: Prepare jniLibs
         env:
