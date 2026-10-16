@@ -119,10 +119,8 @@ void writeDefaultFsgame(const std::string& root)
 {
     const std::string fsgame = root + "/fsgame.ltx";
 
-    struct stat st{};
-    if (stat(fsgame.c_str(), &st) == 0)
-        return;
-
+    // Always rewrite the file so that a stale copy left on the device (for
+    // example one with missing separators) is replaced on every launch.
     const int fd = open(fsgame.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0664);
     if (fd < 0)
     {
@@ -140,7 +138,7 @@ void writeDefaultFsgame(const std::string& root)
         written += result;
     }
     close(fd);
-    XRAY_ANDROID_LOGI("wrote default fsgame.ltx at %s", fsgame.c_str());
+    XRAY_ANDROID_LOGI("wrote fsgame.ltx at %s", fsgame.c_str());
 }
 
 void redirectStdio(const std::string& logDir)
