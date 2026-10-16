@@ -46,6 +46,7 @@ jobs:
             -DBUILD_SHARED_LIBS=ON \
             -DXRAY_USE_LUAJIT=ON \
             -DCMAKE_UNITY_BUILD=ON \
+            -DCMAKE_SHARED_LINKER_FLAGS="-lGLESv3 -lGLESv2 -lGLESv1_CM -lEGL -llog -landroid" \
             -DCMAKE_INSTALL_PREFIX="${PWD}/install-android"
 
       - name: Build
