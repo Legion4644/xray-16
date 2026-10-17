@@ -124,7 +124,7 @@ void InitSettings()
     includeFilter.bind(&includePred, &PathIncludePred::IsIncluded);
 
     InitConfig(pSettings, "system.ltx");
-    InitConfig(pSettingsAuth, "system.ltx", true, true, true, false, 0, includeFilter);
+    InitConfig(pSettingsAuth, "system.ltx", true, true, true, false);
     InitConfig(pSettingsOpenXRay, "openxray.ltx", false, true, true, false);
     InitConfig(pGameIni, "game.ltx");
 
