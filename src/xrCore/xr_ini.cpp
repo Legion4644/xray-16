@@ -402,7 +402,7 @@ IC bool is_empty_line_now(IReader* F)
 void CInifile::Load(IReader* F, pcstr path, allow_include_func_t allow_include_func)
 {
 
-xr_debug(">>> INI_LOAD_START: Path='%s', Instance=0x%p", path ? path : "NULL_PATH", this);
+Msg("[DIAG] INI Load: Path='%s', Instance=%p", path ? path : "NULL", this);
 
     ZoneScoped;
 
