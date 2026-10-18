@@ -13,6 +13,8 @@ if (ANDROID)
     target_sources(xr_3da PRIVATE
         android_bootstrap.cpp
         android_bootstrap.h
+        android_gles_renderer.cpp
+        android_gles_renderer.h
     )
 endif()
 

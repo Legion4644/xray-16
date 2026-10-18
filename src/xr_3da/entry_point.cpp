@@ -16,6 +16,7 @@
 // exported SDL_main symbol that SDLActivity starts from Java.
 #include <SDL_main.h>
 #include "android_bootstrap.h"
+#include "android_gles_renderer.h"
 #endif
 
 // Always request high performance GPU
@@ -32,6 +33,8 @@ std::array<RendererModule*, 2> s_render_modules =
 {
 #ifdef XR_PLATFORM_WINDOWS
     xray::render::render_r4::GetRendererModule(),
+#elif defined(XR_PLATFORM_ANDROID)
+    xray::render::android_gles::GetRendererModule(),
 #endif
 #if !defined(XR_PLATFORM_ANDROID)
     xray::render::render_gl::GetRendererModule(),

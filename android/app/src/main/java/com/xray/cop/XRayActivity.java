@@ -81,7 +81,16 @@ public class XRayActivity extends SDLActivity {
     @Override
     protected String[] getArguments() {
         // Flush the engine log after every line so a crash never loses it.
-        return new String[] { "-force_flushlog" };
+        // Marco 3 uses the GLES stub renderer only: no game, no sound, no
+        // console, no splash, no gamepad.
+        return new String[] {
+                "-force_flushlog",
+                "-nogame",
+                "-nosound",
+                "-nosplash",
+                "-no_gamepad",
+                "-no_console"
+        };
     }
 
     // ------------------------------------------------------------------
