@@ -2,7 +2,9 @@
 
 #include "android_gles_renderer.h"
 
-#include <imgui.h>
+// Render.h needs ImTextureID, but this target does not have ImGui's include
+// path. Dear ImGui's default texture id is void*. This is only for the stub.
+typedef void* ImTextureID;
 
 #include "xrEngine/Render.h"
 #include "xrEngine/EngineAPI.h"
