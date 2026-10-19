@@ -28,6 +28,12 @@ namespace
 constexpr pcstr kRendererMode = "renderer_gles";
 constexpr int kFrameLimit = 3;
 
+static pcstr SafeGLGetString(GLenum name)
+{
+    const char* s = reinterpret_cast<const char*>(glGetString(name));
+    return s ? s : "(null)";
+}
+
 class CGlesStubImGuiRender final : public IImGuiRender
 {
 public:
@@ -205,7 +211,16 @@ public:
     void updateGamma() override {}
 
     void OnDeviceDestroy(bool /*bKeepTextures*/) override {}
-    void Destroy() override { m_window = nullptr; }
+    void Destroy() override
+{
+    if (m_context)
+    {
+        SDL_GL_DeleteContext(m_context);
+        m_context = nullptr;
+    }
+
+    m_window = nullptr;
+}
     void Reset(SDL_Window* hWnd, u32& /*dwWidth*/, u32& /*dwHeight*/, float& /*fWidth_2*/, float& /*fHeight_2*/) override
     {
         m_window = hWnd;
@@ -227,10 +242,48 @@ public:
     void OnDeviceCreate(pcstr /*shName*/) override {}
 
     void Create(SDL_Window* hWnd, u32& /*dwWidth*/, u32& /*dwHeight*/, float& /*fWidth_2*/, float& /*fHeight_2*/) override
+{
+    m_window = hWnd;
+    Msg("[GLES-STUB] Create window=%p", static_cast<void*>(hWnd));
+
+    m_context = SDL_GL_CreateContext(m_window);
+    if (!m_context)
     {
-        m_window = hWnd;
-        Msg("[GLES-STUB] Create window=%p (no GL context yet)", static_cast<void*>(hWnd));
+        Msg("[GLES-STUB] SDL_GL_CreateContext failed: %s", SDL_GetError());
+        return;
     }
+
+    if (SDL_GL_MakeCurrent(m_window, m_context) != 0)
+    {
+        Msg("[GLES-STUB] SDL_GL_MakeCurrent failed: %s", SDL_GetError());
+    }
+
+    if (SDL_GL_SetSwapInterval(1) != 0)
+    {
+        Msg("[GLES-STUB] SDL_GL_SetSwapInterval failed: %s", SDL_GetError());
+    }
+
+    Msg("[GLES-STUB] GL_VERSION: %s", SafeGLGetString(GL_VERSION));
+    Msg("[GLES-STUB] GL_RENDERER: %s", SafeGLGetString(GL_RENDERER));
+    Msg("[GLES-STUB] GL_VENDOR: %s", SafeGLGetString(GL_VENDOR));
+    Msg("[GLES-STUB] GL_SHADING_LANGUAGE_VERSION: %s", SafeGLGetString(GL_SHADING_LANGUAGE_VERSION));
+    Msg("[GLES-STUB] glGetError: %d", static_cast<int>(glGetError()));
+
+    int w = 0;
+    int h = 0;
+    SDL_GL_GetDrawableSize(m_window, &w, &h);
+
+    if (w <= 0)
+        w = 1;
+
+    if (h <= 0)
+        h = 1;
+
+    glViewport(0, 0, w, h);
+    glClearColor(0.08f, 0.18f, 0.35f, 1.0f);
+
+    Msg("[GLES-STUB] drawable size: %dx%d", w, h);
+}
 
     void overdrawBegin() override {}
     void overdrawEnd() override {}
@@ -256,13 +309,25 @@ public:
     u32 GetCacheStatPolys() override { return 0; }
 
     void OnCameraUpdated() override
+{
+    if (m_context)
     {
-        ++m_frameCount;
-        Msg("[GLES-STUB] frame=%d", m_frameCount);
+        if (SDL_GL_MakeCurrent(m_window, m_context) != 0)
+        {
+            Msg("[GLES-STUB] OnCameraUpdated SDL_GL_MakeCurrent failed: %s", SDL_GetError());
+        }
 
-        if (m_frameCount >= kFrameLimit)
-            RequestQuit();
+        glClearColor(0.08f, 0.18f, 0.35f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        SDL_GL_SwapWindow(m_window);
     }
+
+    ++m_frameCount;
+    Msg("[GLES-STUB] frame=%d", m_frameCount);
+
+    if (m_frameCount >= kFrameLimit)
+        RequestQuit();
+}
 
     void Begin() override {}
     void Clear() override {}
