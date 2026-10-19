@@ -2,6 +2,8 @@
 
 #include "android_gles_renderer.h"
 
+#include <imgui.h>
+
 #include "xrEngine/Render.h"
 #include "xrEngine/EngineAPI.h"
 
