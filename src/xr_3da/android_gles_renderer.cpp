@@ -26,12 +26,69 @@ namespace xray::render::android_gles
 namespace
 {
 constexpr pcstr kRendererMode = "renderer_gles";
-constexpr int kFrameLimit = 3;
+constexpr int kFrameLimit = 300;
+constexpr Uint32 kMinElapsedMs = 5000;
 
 static pcstr SafeGLGetString(GLenum name)
 {
     const char* s = reinterpret_cast<const char*>(glGetString(name));
     return s ? s : "(null)";
+}
+
+static GLuint CompileShader(GLenum type, const char* src)
+{
+    GLuint shader = glCreateShader(type);
+    if (!shader)
+    {
+        Msg("[GLES-STUB] glCreateShader failed, glGetError: %d", static_cast<int>(glGetError()));
+        return 0;
+    }
+
+    glShaderSource(shader, 1, &src, nullptr);
+    glCompileShader(shader);
+
+    GLint ok = 0;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+    if (!ok)
+    {
+        char log[512] = {};
+        glGetShaderInfoLog(shader, static_cast<GLsizei>(sizeof(log)), nullptr, log);
+        Msg("[GLES-STUB] shader compile failed: %s", log);
+        glDeleteShader(shader);
+        return 0;
+    }
+
+    return shader;
+}
+
+static GLuint LinkProgram(GLuint vs, GLuint fs)
+{
+    if (!vs || !fs)
+        return 0;
+
+    GLuint program = glCreateProgram();
+    if (!program)
+    {
+        Msg("[GLES-STUB] glCreateProgram failed, glGetError: %d", static_cast<int>(glGetError()));
+        return 0;
+    }
+
+    glAttachShader(program, vs);
+    glAttachShader(program, fs);
+    glLinkProgram(program);
+
+    GLint ok = 0;
+    glGetProgramiv(program, GL_LINK_STATUS, &ok);
+    if (!ok)
+    {
+        char log[512] = {};
+        glGetProgramInfoLog(program, static_cast<GLsizei>(sizeof(log)), nullptr, log);
+        Msg("[GLES-STUB] program link failed: %s", log);
+        glDeleteProgram(program);
+        return 0;
+    }
+
+    return program;
 }
 
 class CGlesStubImGuiRender final : public IImGuiRender
@@ -122,6 +179,10 @@ class CGlesStubRender final : public IRender
     SDL_GLContext m_context{};
     int m_frameCount{};
     bool m_quitRequested{};
+    GLuint m_program{};
+    GLuint m_vao{};
+    GLuint m_vbo{};
+    Uint32 m_startTicks{};
 
     void RequestQuit()
     {
@@ -215,6 +276,26 @@ public:
 {
     if (m_context)
     {
+        SDL_GL_MakeCurrent(m_window, m_context);
+
+        if (m_vao)
+        {
+            glDeleteVertexArrays(1, &m_vao);
+            m_vao = 0;
+        }
+
+        if (m_vbo)
+        {
+            glDeleteBuffers(1, &m_vbo);
+            m_vbo = 0;
+        }
+
+        if (m_program)
+        {
+            glDeleteProgram(m_program);
+            m_program = 0;
+        }
+
         SDL_GL_DeleteContext(m_context);
         m_context = nullptr;
     }
@@ -307,7 +388,7 @@ void OnDeviceCreate(pcstr shName) override
 
     // Para o stub, swap interval 0 é mais seguro: evita bloqueio por vsync
     // durante os primeiros frames de diagnóstico.
-    if (SDL_GL_SetSwapInterval(0) != 0)
+    if (SDL_GL_SetSwapInterval(1) != 0)
     {
         Msg("[GLES-STUB] SDL_GL_SetSwapInterval failed: %s", SDL_GetError());
     }
@@ -348,6 +429,72 @@ void OnDeviceCreate(pcstr shName) override
     SDL_GL_SwapWindow(m_window);
 
     Msg("[GLES-STUB] initial clear/swap done, glGetError: %d", static_cast<int>(glGetError()));
+
+    m_startTicks = SDL_GetTicks();
+
+    static const char* vert_src =
+        "#version 300 es\n"
+        "layout(location = 0) in vec2 aPos;\n"
+        "layout(location = 1) in vec3 aColor;\n"
+        "out vec3 vColor;\n"
+        "void main() {\n"
+        "    gl_Position = vec4(aPos, 0.0, 1.0);\n"
+        "    vColor = aColor;\n"
+        "}\n";
+
+    static const char* frag_src =
+        "#version 300 es\n"
+        "precision mediump float;\n"
+        "in vec3 vColor;\n"
+        "out vec4 fragColor;\n"
+        "void main() {\n"
+        "    fragColor = vec4(vColor, 1.0);\n"
+        "}\n";
+
+    GLuint vs = CompileShader(GL_VERTEX_SHADER, vert_src);
+    GLuint fs = CompileShader(GL_FRAGMENT_SHADER, frag_src);
+
+    if (vs && fs)
+        m_program = LinkProgram(vs, fs);
+
+    if (vs)
+        glDeleteShader(vs);
+
+    if (fs)
+        glDeleteShader(fs);
+
+    if (m_program)
+    {
+        static const GLfloat vertices[] =
+        {
+            -0.6f, -0.4f, 1.0f, 0.0f, 0.0f,
+             0.6f, -0.4f, 0.0f, 1.0f, 0.0f,
+             0.0f,  0.6f, 0.0f, 0.0f, 1.0f
+        };
+
+        glGenVertexArrays(1, &m_vao);
+        glBindVertexArray(m_vao);
+
+        glGenBuffers(1, &m_vbo);
+        glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(sizeof(vertices)), vertices, GL_STATIC_DRAW);
+
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5 * static_cast<GLint>(sizeof(GLfloat)), reinterpret_cast<const void*>(0));
+
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5 * static_cast<GLint>(sizeof(GLfloat)), reinterpret_cast<const void*>(2 * sizeof(GLfloat)));
+
+        glBindVertexArray(0);
+
+        Msg("[GLES-STUB] shader program linked, glGetError: %d", static_cast<int>(glGetError()));
+        Msg("[GLES-STUB] VAO/VBO ready, glGetError: %d", static_cast<int>(glGetError()));
+    }
+    else
+    {
+        Msg("[GLES-STUB] shader/link FAILED, triangle disabled, glGetError: %d", static_cast<int>(glGetError()));
+    }
+
     Msg("[GLES-STUB] Create exit");
 }
 
@@ -385,14 +532,31 @@ void OnDeviceCreate(pcstr shName) override
 
         glClearColor(0.08f, 0.18f, 0.35f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        if (m_program)
+        {
+            glUseProgram(m_program);
+            glBindVertexArray(m_vao);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glBindVertexArray(0);
+            glUseProgram(0);
+
+            if (m_frameCount == 0)
+            {
+                Msg("[GLES-STUB] draw glGetError: %d", static_cast<int>(glGetError()));
+            }
+        }
+
         SDL_GL_SwapWindow(m_window);
     }
 
     ++m_frameCount;
     Msg("[GLES-STUB] frame=%d", m_frameCount);
 
-    if (m_frameCount >= kFrameLimit)
+    if (m_frameCount >= kFrameLimit && (SDL_GetTicks() - m_startTicks) >= kMinElapsedMs)
+    {
         RequestQuit();
+    }
 }
 
     void Begin() override {}
