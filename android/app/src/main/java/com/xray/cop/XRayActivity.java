@@ -89,7 +89,8 @@ public class XRayActivity extends SDLActivity {
                 "-nosound",
                 "-nosplash",
                 "-no_gamepad",
-                "-no_console"
+                "-no_console",
+                "-no_imgui"
         };
     }
 

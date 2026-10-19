@@ -243,7 +243,7 @@ void CRenderDevice::DoRender()
         CalcFrameStats();
         Statistic->Show();
 
-        ImGui::Render();
+        if (!strstr(Core.Params, "-no_imgui")) ImGui::Render();
         m_imgui_render->Render(ImGui::GetDrawData());
         UpdateViewports();
 
@@ -473,7 +473,7 @@ void CRenderDevice::FrameMove()
     ImGui::GetIO().DeltaTime = fTimeDeltaReal;
 
     m_imgui_render->Frame();
-    ImGui::NewFrame();
+    if (!strstr(Core.Params, "-no_imgui")) ImGui::NewFrame();
 
     // Frame move
     stats.EngineTotal.FrameStart();
@@ -489,7 +489,7 @@ void CRenderDevice::FrameMove()
     stats.EngineTotal.End();
     stats.EngineTotal.FrameEnd();
 
-    ImGui::EndFrame();
+    if (!strstr(Core.Params, "-no_imgui")) ImGui::EndFrame();
 }
 
 ENGINE_API bool bShowPauseString = true;
