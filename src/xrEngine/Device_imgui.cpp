@@ -236,6 +236,26 @@ void CRenderDevice::InitializeImGui()
 
     if (io.BackendFlags & ImGuiBackendFlags_PlatformHasViewports)
         io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+
+#ifdef XR_PLATFORM_ANDROID
+    // The Android GLES stub's IImGuiRender is a no-op and never builds the
+    // ImGui font atlas. Without a built atlas, the engine's first
+    // ImGui::NewFrame() (called unconditionally in CRenderDevice::FrameMove)
+    // crashes inside ImFontAtlasUpdateNewFrame. Build a minimal atlas here
+    // with the embedded default font and set a dummy non-null texture id so
+    // NewFrame() is safe. Desktop is unaffected: its real ImGui backend
+    // rebuilds the atlas with a GPU texture later.
+    {
+        ImFontAtlas* fonts = io.Fonts;
+        fonts->AddFontDefault();
+        unsigned char* pixels = nullptr;
+        int tex_w = 0;
+        int tex_h = 0;
+        fonts->GetTexDataAsRGBA32(&pixels, &tex_w, &tex_h);
+        fonts->SetTexID((ImTextureID)(uintptr_t)1);
+        Msg("[GLES-STUB] ImGui font atlas built: %dx%d, TexID=dummy", tex_w, tex_h);
+    }
+#endif
 }
 
 void CRenderDevice::DestroyImGui()
