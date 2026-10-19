@@ -35,6 +35,8 @@ static pcstr SafeGLGetString(GLenum name)
     return s ? s : "(null)";
 }
 
+static void DrGLError() { while (glGetError() != GL_NO_ERROR) {} }
+
 static GLuint CompileShader(GLenum type, const char* src)
 {
     GLuint shader = glCreateShader(type);
@@ -183,6 +185,10 @@ class CGlesStubRender final : public IRender
     GLuint m_vao{};
     GLuint m_vbo{};
     Uint32 m_startTicks{};
+    GLuint m_texture{};
+    GLuint m_quad_program{};
+    GLuint m_quad_vao{};
+    GLuint m_quad_vbo{};
 
     void RequestQuit()
     {
@@ -277,6 +283,30 @@ public:
     if (m_context)
     {
         SDL_GL_MakeCurrent(m_window, m_context);
+
+        if (m_texture)
+        {
+            glDeleteTextures(1, &m_texture);
+            m_texture = 0;
+        }
+
+        if (m_quad_vao)
+        {
+            glDeleteVertexArrays(1, &m_quad_vao);
+            m_quad_vao = 0;
+        }
+
+        if (m_quad_vbo)
+        {
+            glDeleteBuffers(1, &m_quad_vbo);
+            m_quad_vbo = 0;
+        }
+
+        if (m_quad_program)
+        {
+            glDeleteProgram(m_quad_program);
+            m_quad_program = 0;
+        }
 
         if (m_vao)
         {
@@ -495,6 +525,120 @@ void OnDeviceCreate(pcstr shName) override
         Msg("[GLES-STUB] shader/link FAILED, triangle disabled, glGetError: %d", static_cast<int>(glGetError()));
     }
 
+    // Texture 16x16 RGBA8. Yellow marker in x<8 && y<8 is intentional to detect
+    // flip/rotation. Data row 0 is the GL bottom row.
+    static unsigned char tex[16 * 16 * 4];
+    for (int y = 0; y < 16; ++y)
+    {
+        for (int x = 0; x < 16; ++x)
+        {
+            unsigned char r = 255;
+            unsigned char g = 255;
+            unsigned char b = 255;
+            if (((x / 8) + (y / 8)) & 1)
+            {
+                g = 0;
+                b = 255;
+            }
+            if (x < 8 && y < 8)
+            {
+                r = 255;
+                g = 255;
+                b = 0;
+            }
+            const int i = ((y * 16) + x) * 4;
+            tex[i + 0] = r;
+            tex[i + 1] = g;
+            tex[i + 2] = b;
+            tex[i + 3] = 255;
+        }
+    }
+
+    DrGLError();
+    glActiveTexture(GL_TEXTURE0);
+    glGenTextures(1, &m_texture);
+    glBindTexture(GL_TEXTURE_2D, m_texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 16, 16, 0, GL_RGBA, GL_UNSIGNED_BYTE, tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    Msg("[GLES-STUB] texture uploaded 16x16 RGBA8, glGetError: %d", static_cast<int>(glGetError()));
+
+    static const char* quad_vert_src =
+        "#version 300 es\n"
+        "layout(location = 0) in vec2 aPos;\n"
+        "layout(location = 1) in vec2 aUV;\n"
+        "out vec2 vUV;\n"
+        "void main() {\n"
+        "    gl_Position = vec4(aPos, 0.0, 1.0);\n"
+        "    vUV = aUV;\n"
+        "}\n";
+
+    static const char* quad_frag_src =
+        "#version 300 es\n"
+        "precision mediump float;\n"
+        "in vec2 vUV;\n"
+        "uniform sampler2D uTex;\n"
+        "out vec4 fragColor;\n"
+        "void main() {\n"
+        "    fragColor = texture(uTex, vUV);\n"
+        "}\n";
+
+    GLuint qvs = CompileShader(GL_VERTEX_SHADER, quad_vert_src);
+    GLuint qfs = CompileShader(GL_FRAGMENT_SHADER, quad_frag_src);
+
+    if (qvs && qfs)
+        m_quad_program = LinkProgram(qvs, qfs);
+
+    if (qvs)
+        glDeleteShader(qvs);
+
+    if (qfs)
+        glDeleteShader(qfs);
+
+    GLint uloc = -1;
+    if (m_quad_program)
+    {
+        DrGLError();
+        glUseProgram(m_quad_program);
+        uloc = glGetUniformLocation(m_quad_program, "uTex");
+        if (uloc >= 0)
+            glUniform1i(uloc, 0);
+        else
+            Msg("[GLES-STUB] WARN uTex location=-1 (fallback unit0 via bind explicito)");
+        glUseProgram(0);
+        Msg("[GLES-STUB] quad program linked, uTex loc=%d, glGetError: %d", uloc, static_cast<int>(glGetError()));
+    }
+    else
+    {
+        Msg("[GLES-STUB] quad shader/link FAILED, texture disabled, glGetError: %d", static_cast<int>(glGetError()));
+    }
+
+    if (m_quad_program)
+    {
+        static const GLfloat qv[] =
+        {
+            -0.8f, -0.6f, 0.0f, 0.0f,
+             0.8f, -0.6f, 2.0f, 0.0f,
+            -0.8f,  0.6f, 0.0f, 2.0f,
+             0.8f,  0.6f, 2.0f, 2.0f
+        };
+
+        DrGLError();
+        glGenVertexArrays(1, &m_quad_vao);
+        glBindVertexArray(m_quad_vao);
+        glGenBuffers(1, &m_quad_vbo);
+        glBindBuffer(GL_ARRAY_BUFFER, m_quad_vbo);
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(sizeof(qv)), qv, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * static_cast<GLint>(sizeof(GLfloat)), reinterpret_cast<const void*>(0));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * static_cast<GLint>(sizeof(GLfloat)), reinterpret_cast<const void*>(2 * sizeof(GLfloat)));
+        glBindVertexArray(0);
+        Msg("[GLES-STUB] quad VAO/VBO ready, glGetError: %d", static_cast<int>(glGetError()));
+    }
+
     Msg("[GLES-STUB] Create exit");
 }
 
@@ -533,17 +677,19 @@ void OnDeviceCreate(pcstr shName) override
         glClearColor(0.08f, 0.18f, 0.35f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        if (m_program)
+        if (m_quad_program)
         {
-            glUseProgram(m_program);
-            glBindVertexArray(m_vao);
-            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glUseProgram(m_quad_program);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, m_texture);
+            glBindVertexArray(m_quad_vao);
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
             glBindVertexArray(0);
             glUseProgram(0);
 
             if (m_frameCount == 0)
             {
-                Msg("[GLES-STUB] draw glGetError: %d", static_cast<int>(glGetError()));
+                Msg("[GLES-STUB] draw quad glGetError: %d", static_cast<int>(glGetError()));
             }
         }
 
