@@ -221,10 +221,48 @@ public:
 
     m_window = nullptr;
 }
-    void Reset(SDL_Window* hWnd, u32& /*dwWidth*/, u32& /*dwHeight*/, float& /*fWidth_2*/, float& /*fHeight_2*/) override
+    void Reset(SDL_Window* hWnd, u32& dwWidth, u32& dwHeight, float& fWidth_2, float& fHeight_2) override
+{
+    m_window = hWnd;
+    Msg("[GLES-STUB] Reset entry window=%p", static_cast<void*>(hWnd));
+
+    int w = 0;
+    int h = 0;
+
+    if (m_context)
     {
-        m_window = hWnd;
+        SDL_GL_GetDrawableSize(m_window, &w, &h);
     }
+    else if (m_window)
+    {
+        SDL_GetWindowSize(m_window, &w, &h);
+    }
+
+    if (w <= 0)
+        w = 1;
+
+    if (h <= 0)
+        h = 1;
+
+    dwWidth = static_cast<u32>(w);
+    dwHeight = static_cast<u32>(h);
+    fWidth_2 = static_cast<float>(w) * 0.5f;
+    fHeight_2 = static_cast<float>(h) * 0.5f;
+
+    if (m_context)
+    {
+        if (SDL_GL_MakeCurrent(m_window, m_context) != 0)
+        {
+            Msg("[GLES-STUB] Reset SDL_GL_MakeCurrent failed: %s", SDL_GetError());
+        }
+
+        glViewport(0, 0, w, h);
+        glClearColor(0.08f, 0.18f, 0.35f, 1.0f);
+    }
+
+    Msg("[GLES-STUB] Reset size: %dx%d", w, h);
+    Msg("[GLES-STUB] Reset exit");
+}
 
     void ObtainRequiredWindowFlags(u32& windowFlags) override
     {
@@ -238,13 +276,22 @@ public:
         SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
     }
 
-    void SetupStates() override {}
-    void OnDeviceCreate(pcstr /*shName*/) override {}
+    void SetupStates() override
+{
+    Msg("[GLES-STUB] SetupStates entry");
+    Msg("[GLES-STUB] SetupStates exit");
+}
 
-    void Create(SDL_Window* hWnd, u32& /*dwWidth*/, u32& /*dwHeight*/, float& /*fWidth_2*/, float& /*fHeight_2*/) override
+void OnDeviceCreate(pcstr shName) override
+{
+    Msg("[GLES-STUB] OnDeviceCreate entry shName=%s", shName ? shName : "(null)");
+    Msg("[GLES-STUB] OnDeviceCreate exit");
+}
+
+    void Create(SDL_Window* hWnd, u32& dwWidth, u32& dwHeight, float& fWidth_2, float& fHeight_2) override
 {
     m_window = hWnd;
-    Msg("[GLES-STUB] Create window=%p", static_cast<void*>(hWnd));
+    Msg("[GLES-STUB] Create entry window=%p", static_cast<void*>(hWnd));
 
     m_context = SDL_GL_CreateContext(m_window);
     if (!m_context)
@@ -258,7 +305,9 @@ public:
         Msg("[GLES-STUB] SDL_GL_MakeCurrent failed: %s", SDL_GetError());
     }
 
-    if (SDL_GL_SetSwapInterval(1) != 0)
+    // Para o stub, swap interval 0 é mais seguro: evita bloqueio por vsync
+    // durante os primeiros frames de diagnóstico.
+    if (SDL_GL_SetSwapInterval(0) != 0)
     {
         Msg("[GLES-STUB] SDL_GL_SetSwapInterval failed: %s", SDL_GetError());
     }
@@ -267,7 +316,7 @@ public:
     Msg("[GLES-STUB] GL_RENDERER: %s", SafeGLGetString(GL_RENDERER));
     Msg("[GLES-STUB] GL_VENDOR: %s", SafeGLGetString(GL_VENDOR));
     Msg("[GLES-STUB] GL_SHADING_LANGUAGE_VERSION: %s", SafeGLGetString(GL_SHADING_LANGUAGE_VERSION));
-    Msg("[GLES-STUB] glGetError: %d", static_cast<int>(glGetError()));
+    Msg("[GLES-STUB] glGetError after context: %d", static_cast<int>(glGetError()));
 
     int w = 0;
     int h = 0;
@@ -279,10 +328,27 @@ public:
     if (h <= 0)
         h = 1;
 
+    // IMPORTANTE: devolver o tamanho real para o engine.
+    // Esses parâmetros são referências de saída.
+    dwWidth = static_cast<u32>(w);
+    dwHeight = static_cast<u32>(h);
+    fWidth_2 = static_cast<float>(w) * 0.5f;
+    fHeight_2 = static_cast<float>(h) * 0.5f;
+
     glViewport(0, 0, w, h);
     glClearColor(0.08f, 0.18f, 0.35f, 1.0f);
 
     Msg("[GLES-STUB] drawable size: %dx%d", w, h);
+    Msg("[GLES-STUB] engine size set: %ux%u", dwWidth, dwHeight);
+    Msg("[GLES-STUB] engine half size set: %.2f x %.2f", fWidth_2, fHeight_2);
+
+    // Primeiro clear/swap de diagnóstico.
+    // Se isso funcionar, provamos que GL draw + swap estão vivos.
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    SDL_GL_SwapWindow(m_window);
+
+    Msg("[GLES-STUB] initial clear/swap done, glGetError: %d", static_cast<int>(glGetError()));
+    Msg("[GLES-STUB] Create exit");
 }
 
     void overdrawBegin() override {}
