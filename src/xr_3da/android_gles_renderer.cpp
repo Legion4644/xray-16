@@ -4,25 +4,18 @@
 
 #include "xrEngine/Render.h"
 #include "xrEngine/EngineAPI.h"
+
 #include "Include/xrRender/RenderFactory.h"
 #include "Include/xrRender/ImGuiRender.h"
 #include "Include/xrRender/FontRender.h"
 #include "Include/xrRender/StatGraphRender.h"
-#include "Include/xrRender/UISequenceVideoItem.h"
-#include "Include/xrRender/UIShader.h"
-#include "Include/xrRender/WallMarkArray.h"
-#include "Include/xrRender/EnvironmentRender.h"
-#include "Include/xrRender/RainRender.h"
-#include "Include/xrRender/LensFlareRender.h"
-#include "Include/xrRender/ThunderboltRender.h"
-#include "Include/xrRender/ThunderboltDescRender.h"
-#ifdef DEBUG
-#include "Include/xrRender/ObjectSpaceRender.h"
-#endif
+
 #include "Include/xrAPI/xrAPI.h"
+#include "xrCommon/xr_vector.h"
 
 #include <SDL.h>
 #include <GLES3/gl3.h>
+#include <utility>
 
 namespace xray::render::android_gles
 {
@@ -59,50 +52,56 @@ public:
     void OnRender(CStatGraph& /*owner*/) override {}
 };
 
+// Factory stub: guards mirror Include/xrRender/RenderFactory.h.
+// Only the three Create* that return a real object have a matching xr_delete;
+// every other Destroy* is a no-op because the stub never allocated that object.
 class CGlesStubRenderFactory final : public IRenderFactory
 {
 public:
+#ifndef _EDITOR
     IUISequenceVideoItem* CreateUISequenceVideoItem() override { return nullptr; }
-    void DestroyUISequenceVideoItem(IUISequenceVideoItem* pObject) override { xr_delete(pObject); }
+    void DestroyUISequenceVideoItem(IUISequenceVideoItem* /*pObject*/) override {}
 
     IUIShader* CreateUIShader() override { return nullptr; }
-    void DestroyUIShader(IUIShader* pObject) override { xr_delete(pObject); }
+    void DestroyUIShader(IUIShader* /*pObject*/) override {}
 
     IStatGraphRender* CreateStatGraphRender() override { return xr_new<CGlesStubStatGraphRender>(); }
     void DestroyStatGraphRender(IStatGraphRender* pObject) override { xr_delete(pObject); }
 
 #ifdef DEBUG
     IObjectSpaceRender* CreateObjectSpaceRender() override { return nullptr; }
-    void DestroyObjectSpaceRender(IObjectSpaceRender* pObject) override { xr_delete(pObject); }
-#endif
+    void DestroyObjectSpaceRender(IObjectSpaceRender* /*pObject*/) override {}
+#endif // DEBUG
 
     IWallMarkArray* CreateWallMarkArray() override { return nullptr; }
-    void DestroyWallMarkArray(IWallMarkArray* pObject) override { xr_delete(pObject); }
+    void DestroyWallMarkArray(IWallMarkArray* /*pObject*/) override {}
 
     IEnvironmentRender* CreateEnvironmentRender() override { return nullptr; }
-    void DestroyEnvironmentRender(IEnvironmentRender* pObject) override { xr_delete(pObject); }
+    void DestroyEnvironmentRender(IEnvironmentRender* /*pObject*/) override {}
 
     IEnvDescriptorRender* CreateEnvDescriptorRender() override { return nullptr; }
-    void DestroyEnvDescriptorRender(IEnvDescriptorRender* pObject) override { xr_delete(pObject); }
+    void DestroyEnvDescriptorRender(IEnvDescriptorRender* /*pObject*/) override {}
 
     IRainRender* CreateRainRender() override { return nullptr; }
-    void DestroyRainRender(IRainRender* pObject) override { xr_delete(pObject); }
+    void DestroyRainRender(IRainRender* /*pObject*/) override {}
 
     ILensFlareRender* CreateLensFlareRender() override { return nullptr; }
-    void DestroyLensFlareRender(ILensFlareRender* pObject) override { xr_delete(pObject); }
+    void DestroyLensFlareRender(ILensFlareRender* /*pObject*/) override {}
 
     IImGuiRender* CreateImGuiRender() override { return xr_new<CGlesStubImGuiRender>(); }
     void DestroyImGuiRender(IImGuiRender* pObject) override { xr_delete(pObject); }
 
     IThunderboltRender* CreateThunderboltRender() override { return nullptr; }
-    void DestroyThunderboltRender(IThunderboltRender* pObject) override { xr_delete(pObject); }
+    void DestroyThunderboltRender(IThunderboltRender* /*pObject*/) override {}
 
     IThunderboltDescRender* CreateThunderboltDescRender() override { return nullptr; }
-    void DestroyThunderboltDescRender(IThunderboltDescRender* pObject) override { xr_delete(pObject); }
+    void DestroyThunderboltDescRender(IThunderboltDescRender* /*pObject*/) override {}
 
     IFlareRender* CreateFlareRender() override { return nullptr; }
-    void DestroyFlareRender(IFlareRender* pObject) override { xr_delete(pObject); }
+    void DestroyFlareRender(IFlareRender* /*pObject*/) override {}
+#endif // _EDITOR
 
+    // FontRender lives outside the _EDITOR guard in the base.
     IFontRender* CreateFontRender() override { return xr_new<CGlesStubFontRender>(); }
     void DestroyFontRender(IFontRender* pObject) override { xr_delete(pObject); }
 };
@@ -289,15 +288,32 @@ public:
     }
 };
 
+// Lazily constructed on first use, so nothing here touches the engine allocator
+// during dlopen of libxr_3da.so.
+CGlesStubRender& RenderStub()
+{
+    static CGlesStubRender r;
+    return r;
+}
+
+CGlesStubRenderFactory& FactoryStub()
+{
+    static CGlesStubRenderFactory f;
+    return f;
+}
+
 class CGlesStubRendererModule final : public RendererModule
 {
-    xr_vector<std::pair<pcstr, int>> m_modes{ { kRendererMode, 0 } };
-
 public:
+    // Must return a reference to persistent storage; EngineAPI.cpp keeps the reference.
     const xr_vector<std::pair<pcstr, int>>& ObtainSupportedModes() override
     {
+        static xr_vector<std::pair<pcstr, int>> modes;
+        if (modes.empty())
+            modes.emplace_back(kRendererMode, 0);
+
         Msg("[GLES-STUB] ObtainSupportedModes -> %s", kRendererMode);
-        return m_modes;
+        return modes;
     }
 
     bool CheckGameRequirements() override { return true; }
@@ -306,8 +322,8 @@ public:
     {
         Msg("[GLES-STUB] SetupEnv mode=%s", mode ? mode : "(null)");
 
-        GEnv.Render = &s_render;
-        GEnv.RenderFactory = &s_factory;
+        GEnv.Render = &RenderStub();
+        GEnv.RenderFactory = &FactoryStub();
 
         Msg("[GLES-STUB] GEnv.Render=%p GEnv.RenderFactory=%p", static_cast<void*>(GEnv.Render),
             static_cast<void*>(GEnv.RenderFactory));
@@ -315,25 +331,18 @@ public:
 
     void ClearEnv() override
     {
-        if (GEnv.Render == &s_render)
+        if (GEnv.Render == &RenderStub())
             GEnv.Render = nullptr;
 
-        if (GEnv.RenderFactory == &s_factory)
+        if (GEnv.RenderFactory == &FactoryStub())
             GEnv.RenderFactory = nullptr;
     }
-
-    static CGlesStubRender s_render;
-    static CGlesStubRenderFactory s_factory;
 };
-
-CGlesStubRender CGlesStubRendererModule::s_render;
-CGlesStubRenderFactory CGlesStubRendererModule::s_factory;
-
-CGlesStubRendererModule g_module;
 } // namespace
 
 RendererModule* GetRendererModule()
 {
-    return &g_module;
+    static CGlesStubRendererModule module;
+    return &module;
 }
 } // namespace xray::render::android_gles
