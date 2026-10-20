@@ -86,10 +86,7 @@ public class XRayActivity extends SDLActivity {
 
     @Override
     protected String[] getArguments() {
-        // Flush the engine log after every line so a crash never loses it.
-        // Marco 3 uses the GLES stub renderer only: no game, no sound, no
-        // console, no splash, no gamepad.
-        return new String[] {
+        final String[] defaults = new String[] {
                 "-force_flushlog",
                 "-nogame",
                 "-nosound",
@@ -98,6 +95,35 @@ public class XRayActivity extends SDLActivity {
                 "-no_console",
                 "-no_imgui"
         };
+        try {
+            File file = new File("/sdcard/XRay/commandline.txt");
+            if (!file.exists()) {
+                return defaults;
+            }
+            ArrayList<String> args = new ArrayList<>();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file)));
+            try {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    line = line.trim();
+                    if (line.isEmpty()) {
+                        continue;
+                    }
+                    args.add(line);
+                    if (args.size() >= 32) {
+                        break;
+                    }
+                }
+            } finally {
+                reader.close();
+            }
+            if (args.isEmpty()) {
+                return defaults;
+            }
+            return args.toArray(new String[0]);
+        } catch (Exception e) {
+            return defaults;
+        }
     }
 
     // ------------------------------------------------------------------
