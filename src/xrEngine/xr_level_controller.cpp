@@ -780,6 +780,9 @@ EGameActions GetBindedAction(int dik, EKeyContext context /*= EKeyContext::Undef
     {
         key_binding* binding = &g_key_bindings[idx];
 
+        if (!binding->m_action)
+            return kNOTBINDED;
+
         const bool isGroupMatching = IsGroupMatching(binding->m_action->key_group, g_current_keygroup);
         if (!isGroupMatching)
             continue;
