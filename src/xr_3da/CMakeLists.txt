@@ -57,6 +57,10 @@ target_link_libraries(xr_3da
     $<$<BOOL:${ANDROID}>:z>
 )
 
+if (XR_ANDROID_GLRENDER AND TARGET xrRender_GL)
+  add_dependencies(xr_3da xrRender_GL)
+endif()
+
 if (NOT ANDROID)
     set_target_properties(xr_3da PROPERTIES
         PREFIX ""
