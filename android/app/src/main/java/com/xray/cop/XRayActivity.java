@@ -2,6 +2,7 @@ package com.xray.cop;
 
 import android.Manifest;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
@@ -69,6 +70,11 @@ public class XRayActivity extends SDLActivity {
         attachLogOverlay();
         ensureStorageAccess();
         mHandler.post(mLogPoll);
+    }
+
+    @Override
+    public void setOrientationBis(int w, int h, boolean resizable, String hint) {
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
     }
 
     @Override
