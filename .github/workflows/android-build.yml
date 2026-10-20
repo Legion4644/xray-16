@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - android-port
+      - android-port-glrender
       - dev
   pull_request:
   workflow_dispatch:
@@ -113,7 +114,7 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: android-debug-apk
+          name: ${{ github.ref_name == 'android-port-glrender' && 'android-debug-glrender-apk' || 'android-debug-apk' }}
           path: apk/xray-cop-debug.apk
           if-no-files-found: error
 
@@ -121,10 +122,10 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: android-debug
-          name: Android debug build
+          tag_name: ${{ github.ref_name == 'android-port-glrender' && 'android-debug-glrender' || 'android-debug' }}
+          name: ${{ github.ref_name == 'android-port-glrender' && 'Android debug glrender build' || 'Android debug build' }}
           body: |
-            Automated debug APK built from the `android-port` branch.
+            Automated debug APK built from the `${{ github.ref_name }}` branch.
 
             Install it on an arm64-v8a device, copy the game folder to
             `/sdcard/XRay/gamedata`, then open the app and grant all-files
