@@ -67,6 +67,21 @@ jobs:
           path: dist/arm64-v8a
           if-no-files-found: warn
 
+      - name: Collect debug symbols
+        if: github.ref_name == 'android-port-glrender'
+        run: |
+          mkdir -p dist/glrender-symbols
+          find build-android bin -type f -name '*.so' -print -exec cp -n {} dist/glrender-symbols/ \; || true
+          ls -la dist/glrender-symbols || true
+
+      - name: Upload debug symbols
+        if: github.ref_name == 'android-port-glrender'
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-glrender-symbols
+          path: dist/glrender-symbols
+          if-no-files-found: warn
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:

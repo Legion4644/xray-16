@@ -7,6 +7,11 @@ add_compile_definitions(
 
 add_compile_options(${XRAY_ENABLE_WARNINGS})
 
+if (XR_ANDROID_GLRENDER)
+    add_compile_options(-g)
+    add_link_options(-g)
+endif()
+
 add_subdirectory(utils)
 add_subdirectory(Layers)
 add_subdirectory(xr_3da)
