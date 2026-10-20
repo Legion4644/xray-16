@@ -19,6 +19,8 @@ typedef void* ImTextureID;
 
 #include <SDL.h>
 #include <GLES3/gl3.h>
+#include <cstdio>
+#include <cstring>
 #include <utility>
 
 namespace xray::render::android_gles
@@ -36,6 +38,125 @@ static pcstr SafeGLGetString(GLenum name)
 }
 
 static void DrGLError() { while (glGetError() != GL_NO_ERROR) {} }
+
+static GLint ProbeColorAttachment(GLenum internalformat, GLenum format, GLenum type)
+{
+    GLuint tex = 0;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, internalformat, 4, 4, 0, format, type, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    GLuint fbo = 0;
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+    GLint st = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+
+    glDeleteFramebuffers(1, &fbo);
+    glDeleteTextures(1, &tex);
+    return st;
+}
+
+static bool HasGLExtension(const char* name)
+{
+    GLint n = 0;
+    glGetIntegerv(GL_NUM_EXTENSIONS, &n);
+    for (GLint i = 0; i < n; ++i)
+    {
+        const char* ext = reinterpret_cast<const char*>(glGetStringi(GL_EXTENSIONS, static_cast<GLuint>(i)));
+        if (ext && strcmp(ext, name) == 0)
+            return true;
+    }
+    return false;
+}
+
+static void DumpFboCap(FILE* f, const char* name, GLenum internalformat, GLenum format, GLenum type)
+{
+    const GLint st = ProbeColorAttachment(internalformat, format, type);
+    fprintf(f, "FBO_%s_STATUS=%d\n", name, static_cast<int>(st));
+    fprintf(f, "FBO_%s_COMPLETE=%d\n", name, st == GL_FRAMEBUFFER_COMPLETE ? 1 : 0);
+}
+
+static void DumpGLCaps()
+{
+    FILE* f = fopen("/sdcard/XRay/gl_caps.txt", "w");
+    if (!f)
+    {
+        Msg("[GLES-STUB] gl_caps fopen FALHOU (permissoes/dir?), telemetria ignorada");
+        return;
+    }
+
+    fprintf(f, "GL_VERSION=%s\n", SafeGLGetString(GL_VERSION));
+    fprintf(f, "GL_RENDERER=%s\n", SafeGLGetString(GL_RENDERER));
+    fprintf(f, "GL_VENDOR=%s\n", SafeGLGetString(GL_VENDOR));
+    fprintf(f, "GL_SHADING_LANGUAGE_VERSION=%s\n", SafeGLGetString(GL_SHADING_LANGUAGE_VERSION));
+
+    GLint n = 0;
+    glGetIntegerv(GL_NUM_EXTENSIONS, &n);
+    for (GLint i = 0; i < n; ++i)
+    {
+        const char* ext = reinterpret_cast<const char*>(glGetStringi(GL_EXTENSIONS, static_cast<GLuint>(i)));
+        fprintf(f, "EXT_%s=1\n", ext ? ext : "(null)");
+    }
+
+    fprintf(f, "HAS_S3TC=%d\n", HasGLExtension("GL_EXT_texture_compression_s3tc") ? 1 : 0);
+    fprintf(f, "HAS_ASTC_LDR=%d\n", HasGLExtension("GL_KHR_texture_compression_astc_ldr") ? 1 : 0);
+    fprintf(f, "HAS_ASTC_HDR=%d\n", HasGLExtension("GL_KHR_texture_compression_astc_hdr") ? 1 : 0);
+    fprintf(f, "HAS_ETC2=%d\n", HasGLExtension("GL_OES_compressed_ETC2_RGB8_texture") ? 1 : 0);
+    fprintf(f, "HAS_PVRTC=%d\n", HasGLExtension("GL_IMG_texture_compression_pvrtc") ? 1 : 0);
+    fprintf(f, "HAS_FLOAT_TEX=%d\n", HasGLExtension("GL_OES_texture_float") ? 1 : 0);
+    fprintf(f, "HAS_HALF_FLOAT_COLOR=%d\n", HasGLExtension("GL_EXT_color_buffer_half_float") ? 1 : 0);
+    fprintf(f, "HAS_FULL_FLOAT_COLOR=%d\n", HasGLExtension("GL_EXT_color_buffer_float") ? 1 : 0);
+    fprintf(f, "HAS_ANISOTROPY=%d\n", HasGLExtension("GL_EXT_texture_filter_anisotropic") ? 1 : 0);
+
+    GLint v = 0;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &v);
+    fprintf(f, "MAX_TEXTURE_SIZE=%d\n", static_cast<int>(v));
+    glGetIntegerv(GL_MAX_CUBE_MAP_TEXTURE_SIZE, &v);
+    fprintf(f, "MAX_CUBE_MAP_TEXTURE_SIZE=%d\n", static_cast<int>(v));
+    glGetIntegerv(GL_MAX_RENDERBUFFER_SIZE, &v);
+    fprintf(f, "MAX_RENDERBUFFER_SIZE=%d\n", static_cast<int>(v));
+    glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &v);
+    fprintf(f, "MAX_COMBINED_TEXTURE_IMAGE_UNITS=%d\n", static_cast<int>(v));
+    glGetIntegerv(GL_MAX_VERTEX_ATTRIBS, &v);
+    fprintf(f, "MAX_VERTEX_ATTRIBS=%d\n", static_cast<int>(v));
+    glGetIntegerv(GL_MAX_VARYING_VECTORS, &v);
+    fprintf(f, "MAX_VARYING_VECTORS=%d\n", static_cast<int>(v));
+    glGetIntegerv(GL_MAX_VERTEX_UNIFORM_VECTORS, &v);
+    fprintf(f, "MAX_VERTEX_UNIFORM_VECTORS=%d\n", static_cast<int>(v));
+    glGetIntegerv(GL_MAX_FRAGMENT_UNIFORM_VECTORS, &v);
+    fprintf(f, "MAX_FRAGMENT_UNIFORM_VECTORS=%d\n", static_cast<int>(v));
+    glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE, &v);
+    fprintf(f, "MAX_UNIFORM_BLOCK_SIZE=%d\n", static_cast<int>(v));
+    glGetIntegerv(GL_MAX_SAMPLES, &v);
+    fprintf(f, "MAX_SAMPLES=%d\n", static_cast<int>(v));
+    glGetIntegerv(GL_MAX_COLOR_ATTACHMENTS, &v);
+    fprintf(f, "MAX_COLOR_ATTACHMENTS=%d\n", static_cast<int>(v));
+    glGetIntegerv(GL_MAX_DRAW_BUFFERS, &v);
+    fprintf(f, "MAX_DRAW_BUFFERS=%d\n", static_cast<int>(v));
+
+    DumpFboCap(f, "RGBA8", GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE);
+    DumpFboCap(f, "RGB10_A2", GL_RGB10_A2, GL_RGBA, GL_UNSIGNED_INT_2_10_10_10_REV);
+    DumpFboCap(f, "RGBA16F", GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT);
+    DumpFboCap(f, "RGB16F", GL_RGB16F, GL_RGB, GL_HALF_FLOAT);
+    DumpFboCap(f, "R16F", GL_R16F, GL_RED, GL_HALF_FLOAT);
+    DumpFboCap(f, "RG16F", GL_RG16F, GL_RG, GL_HALF_FLOAT);
+    DumpFboCap(f, "RGBA32F", GL_RGBA32F, GL_RGBA, GL_FLOAT);
+    DumpFboCap(f, "DEPTH_COMPONENT24", GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT);
+    DumpFboCap(f, "DEPTH24_STENCIL8", GL_DEPTH24_STENCIL8, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8);
+    DumpFboCap(f, "STENCIL_INDEX8", GL_STENCIL_INDEX8, GL_STENCIL_INDEX, GL_UNSIGNED_BYTE);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
+
+    Msg("[GLES-STUB] gl_caps.txt escrito, glGetError: %d", static_cast<int>(glGetError()));
+    fclose(f);
+}
 
 static GLuint CompileShader(GLenum type, const char* src)
 {
@@ -428,6 +549,8 @@ void OnDeviceCreate(pcstr shName) override
     Msg("[GLES-STUB] GL_VENDOR: %s", SafeGLGetString(GL_VENDOR));
     Msg("[GLES-STUB] GL_SHADING_LANGUAGE_VERSION: %s", SafeGLGetString(GL_SHADING_LANGUAGE_VERSION));
     Msg("[GLES-STUB] glGetError after context: %d", static_cast<int>(glGetError()));
+
+    DumpGLCaps();
 
     int w = 0;
     int h = 0;
