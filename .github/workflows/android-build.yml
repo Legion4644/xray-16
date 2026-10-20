@@ -134,3 +134,17 @@ jobs:
           files: apk/xray-cop-debug.apk
           prerelease: true
           fail_on_unmatched_files: true
+
+      - name: GLRENDER-PROBE (diagnostic)
+        if: github.ref_name == 'android-port-glrender'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DIR=$(find build-android -type d -name 'xrRender_GL.dir' 2>/dev/null | head -1)
+          OUT=$(find build-android -type f \( -name 'xrRender_GL.a' -o -name 'xrRender_GL.so' \) 2>/dev/null | head -5 | tr '\n' ' ')
+          if [ -n "$DIR" ]; then BUILT=YES; else BUILT=NO; fi
+          LINE="GLRENDER-PROBE: XRRENDER_GL_BUILT=$BUILT dir=${DIR:-NONE} out=${OUT:-NONE}"
+          BODY=$(gh release view android-debug-glrender --json body -q .body 2>/dev/null || echo "")
+          gh release edit android-debug-glrender --notes "$BODY
+$LINE" 2>/dev/null || echo "WARN: gh release edit falhou; veredito só no log: $LINE"
+          echo "$LINE"
