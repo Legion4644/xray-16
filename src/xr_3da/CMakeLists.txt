@@ -46,7 +46,7 @@ target_link_libraries(xr_3da
     xrCore
     xrAPI
     xrEngine
-    $<$<NOT:$<BOOL:${ANDROID}>>:xrRender_GL>
+    $<$<OR:$<NOT:$<BOOL:${ANDROID}>>,$<BOOL:${XR_ANDROID_GLRENDER}>>:xrRender_GL>
     xrGame
     $<$<BOOL:${ANDROID}>:SDL2::SDL2>
     $<$<BOOL:${ANDROID}>:log>
