@@ -114,7 +114,14 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
 #if defined(XR_PLATFORM_GLES)
     if (gli::is_compressed(texture.format()))
     {
-        gli::texture converted = gli::convert(texture, gli::FORMAT_RGBA8_UNORM_PACK8);
+        gli::texture converted;
+        if (texture.target() == gli::TARGET_2D)
+        {
+            gli::texture2d src(texture);
+            gli::texture2d dst = gli::convert(src, gli::FORMAT_RGBA8_UNORM_PACK8);
+            if (!dst.empty())
+                converted = dst;
+        }
         if (!converted.empty())
         {
             static bool s_logged_dxt_fallback = false;
