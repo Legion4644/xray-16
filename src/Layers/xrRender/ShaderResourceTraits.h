@@ -70,7 +70,7 @@ inline std::pair<char, GLuint> GLCompileShader(pcstr* buffer, size_t size, pcstr
         CHK_GL(glProgramParameteri(program, GL_PROGRAM_BINARY_RETRIEVABLE_HINT, (GLint)GL_TRUE));
 
     CHK_GL(glAttachShader(program, shader));
-#ifndef XR_PLATFORM_WEB // GLSL ES declares output locations in the shader itself
+#if !defined(XR_PLATFORM_WEB) && !defined(XR_PLATFORM_GLES) // GLSL ES declares output locations in the shader itself
     CHK_GL(glBindFragDataLocation(program, 0, "SV_Target"));
     CHK_GL(glBindFragDataLocation(program, 0, "SV_Target0"));
     CHK_GL(glBindFragDataLocation(program, 1, "SV_Target1"));
@@ -101,7 +101,7 @@ inline std::pair<char, GLuint> GLUseBinary(pcstr* buffer, size_t size, const GLe
         CHK_GL(glObjectLabel(GL_PROGRAM, program, -1, name));
     CHK_GL(glProgramParameteri(program, GL_PROGRAM_SEPARABLE, (GLint)GL_TRUE));
 
-#ifndef XR_PLATFORM_WEB // GLSL ES declares output locations in the shader itself
+#if !defined(XR_PLATFORM_WEB) && !defined(XR_PLATFORM_GLES) // GLSL ES declares output locations in the shader itself
     CHK_GL(glBindFragDataLocation(program, 0, "SV_Target"));
     CHK_GL(glBindFragDataLocation(program, 0, "SV_Target0"));
     CHK_GL(glBindFragDataLocation(program, 1, "SV_Target1"));
@@ -159,7 +159,7 @@ static GLuint GLLinkMonolithicProgram(pcstr name, GLuint ps, GLuint vs, GLuint g
     CHK_GL(glAttachShader(program, vs));
     if (gs)
         CHK_GL(glAttachShader(program, gs));
-#ifndef XR_PLATFORM_WEB // GLSL ES declares output locations in the shader itself
+#if !defined(XR_PLATFORM_WEB) && !defined(XR_PLATFORM_GLES) // GLSL ES declares output locations in the shader itself
     CHK_GL(glBindFragDataLocation(program, 0, "SV_Target"));
     CHK_GL(glBindFragDataLocation(program, 0, "SV_Target0"));
     CHK_GL(glBindFragDataLocation(program, 1, "SV_Target1"));
