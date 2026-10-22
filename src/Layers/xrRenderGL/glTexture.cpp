@@ -111,9 +111,33 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     gli::texture texture = gli::load((char*)S->pointer(), img_size);
     R_ASSERT2(!texture.empty(), fn);
 
+#if defined(XR_PLATFORM_GLES)
+    if (gli::is_compressed(texture.format()))
+    {
+        gli::texture converted = gli::convert(texture, gli::FORMAT_RGBA8_UNORM_PACK8);
+        if (!converted.empty())
+        {
+            static bool s_logged_dxt_fallback = false;
+            if (!s_logged_dxt_fallback)
+            {
+                Msg("! GLES: converting compressed texture to RGBA8: %s", fn);
+                s_logged_dxt_fallback = true;
+            }
+            texture = std::move(converted);
+        }
+        else
+        {
+            Msg("! GLES: compressed texture convert failed, using 1x1 RGBA8: %s", fn);
+            texture = gli::texture(gli::TARGET_2D, gli::FORMAT_RGBA8_UNORM_PACK8, gli::extent3d(1, 1, 1), 1, 1, 1);
+            const glm::u8vec4 pixel(255, 0, 255, 255);
+            memcpy(texture.data(), &pixel, sizeof(pixel));
+        }
+    }
+#endif
+
     u32 mip_cnt = u32(-1); // XXX: write to it when reading with GLI!
 
-#ifdef XR_PLATFORM_WEB
+#if defined(XR_PLATFORM_WEB) || defined(XR_PLATFORM_GLES)
     gli::gl GL(gli::gl::PROFILE_ES30);
 #else
     gli::gl GL(gli::gl::PROFILE_GL33);
