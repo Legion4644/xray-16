@@ -17,7 +17,17 @@ CTexture* dxUIShader::GetBaseTexture() const
     if (!hShader)
         return nullptr;
 
-    const SPass& pass = *hShader->E[0]->passes[0];
+    if (!hShader->E[0])
+        return nullptr;
+
+    if (hShader->E[0]->passes.empty())
+        return nullptr;
+
+    const auto& pass_ref = hShader->E[0]->passes[0];
+    if (!pass_ref)
+        return nullptr;
+
+    const SPass& pass = *pass_ref;
     if (!pass.T)
         return nullptr;
 
@@ -25,9 +35,15 @@ CTexture* dxUIShader::GetBaseTexture() const
     if (textures.empty())
         return nullptr;
 
-    const R_constant* sbase = pass.constants->get(baseTexture)._get();
+    if (!pass.constants)
+        return nullptr;
 
-    return textures[sbase ? sbase->samp.index : 0].second._get();
+    const R_constant* sbase = pass.constants->get(baseTexture)._get();
+    const u32 index = sbase ? sbase->samp.index : 0;
+    if (index >= textures.size())
+        return nullptr;
+
+    return textures[index].second._get();
 }
 
 xrImTextureData dxUIShader::GetImGuiTextureId()
