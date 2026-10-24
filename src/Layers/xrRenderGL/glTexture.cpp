@@ -189,13 +189,26 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     {
     case gli::TARGET_2D:
     case gli::TARGET_CUBE:
+#if defined(XR_PLATFORM_GLES)
+        {
+            GLenum stale_err = GL_NO_ERROR;
+            GLenum e;
+            while ((e = glGetError()) != GL_NO_ERROR)
+                stale_err = e;
+
+            if (stale_err != GL_NO_ERROR)
+                Msg("! R3-DIAG cleared stale GL error 0x%x before glTexStorage2D: '%s'", (unsigned int)stale_err, fn);
+        }
+#endif
         glTexStorage2D(target, static_cast<GLint>(texture.levels()), format.Internal,
                        tex_extent.x, tex_extent.y);
         err = glGetError();
         if (err != GL_NO_ERROR)
         {
             VERIFY(err == GL_NO_ERROR);
-            Msg("! OpenGL: 0x%x: Invalid 2D texture: '%s'", err, fn);
+            Msg("! OpenGL: 0x%x: Invalid 2D texture: '%s' target=0x%x internal=0x%x levels=%d w=%d h=%d",
+                (unsigned int)err, fn, (unsigned int)target, (unsigned int)format.Internal,
+                static_cast<int>(texture.levels()), static_cast<int>(tex_extent.x), static_cast<int>(tex_extent.y));
         }
         break;
     case gli::TARGET_3D:
