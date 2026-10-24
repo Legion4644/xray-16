@@ -244,7 +244,7 @@ void CRenderDevice::DoRender()
         Statistic->Show();
 
         if (!strstr(Core.Params, "-no_imgui")) ImGui::Render();
-        m_imgui_render->Render(ImGui::GetDrawData());
+        if (!strstr(Core.Params, "-no_imgui")) m_imgui_render->Render(ImGui::GetDrawData());
         UpdateViewports();
 
         RenderEnd(); // Present goes here
