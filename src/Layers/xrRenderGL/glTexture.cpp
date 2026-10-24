@@ -190,14 +190,9 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     case gli::TARGET_2D:
     case gli::TARGET_CUBE:
 #if defined(XR_PLATFORM_GLES)
+        // clear stale GL errors from earlier paths (e.g. Theora video) so the check below reflects only this glTexStorage2D
+        while (glGetError() != GL_NO_ERROR)
         {
-            GLenum stale_err = GL_NO_ERROR;
-            GLenum e;
-            while ((e = glGetError()) != GL_NO_ERROR)
-                stale_err = e;
-
-            if (stale_err != GL_NO_ERROR)
-                Msg("! R3-DIAG cleared stale GL error 0x%x before glTexStorage2D: '%s'", (unsigned int)stale_err, fn);
         }
 #endif
         glTexStorage2D(target, static_cast<GLint>(texture.levels()), format.Internal,
