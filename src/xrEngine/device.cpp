@@ -230,6 +230,13 @@ void CRenderDevice::DoRender()
 
     ZoneScoped;
 
+#if defined(XR_ANDROID_GLRENDER) && defined(XR_PLATFORM_GLES)
+    static unsigned int s_r3_diag_frame = 0;
+    ++s_r3_diag_frame;
+    if ((s_r3_diag_frame % 60u) == 1u)
+        Log("[R3-DIAG] DoRender frame=%u", s_r3_diag_frame);
+#endif
+
     CStatTimer renderTotalReal;
     renderTotalReal.FrameStart();
     renderTotalReal.Begin();
