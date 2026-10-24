@@ -327,9 +327,30 @@ void CHW::Present()
         GL_COLOR_BUFFER_BIT, GL_NEAREST);
 #endif
 
+#if defined(XR_ANDROID_GLRENDER) && defined(XR_PLATFORM_GLES)
+    static unsigned int s_magenta_frame = 0;
+    ++s_magenta_frame;
+    if (s_magenta_frame <= 120u) {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glClearColor(1.0f, 0.0f, 1.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
+    if (s_magenta_frame == 1u)
+        Log("[R3-DIAG] magenta start");
+    if (s_magenta_frame == 120u)
+        Log("[R3-DIAG] magenta end");
+#endif
+
 #ifndef XR_PLATFORM_WEB
     SDL_GL_SwapWindow(m_window); // on the web the frame is presented when the loop callback returns
 #endif
+
+#if defined(XR_ANDROID_GLRENDER) && defined(XR_PLATFORM_GLES)
+    GLenum e = glGetError();
+    if (e != GL_NO_ERROR)
+        Log("[R3-DIAG] post-swap glGetError nonzero");
+#endif
+
     CurrentBackBuffer = (CurrentBackBuffer + 1) % BackBufferCount;
 }
 
