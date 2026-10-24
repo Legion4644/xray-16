@@ -36,7 +36,7 @@ std::array<RendererModule*, 2> s_render_modules =
 #elif defined(XR_PLATFORM_ANDROID)
     xray::render::android_gles::GetRendererModule(),
 #endif
-#if !defined(XR_PLATFORM_ANDROID)
+#if !defined(XR_PLATFORM_ANDROID) || defined(XR_ANDROID_GLRENDER)
     xray::render::render_gl::GetRendererModule(),
 #endif
 };
