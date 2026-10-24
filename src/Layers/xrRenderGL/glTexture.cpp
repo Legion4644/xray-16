@@ -161,7 +161,7 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     glTexParameteri(target, GL_TEXTURE_BASE_LEVEL, 0);
     glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(texture.levels() - 1));
 
-#ifdef XR_PLATFORM_WEB
+#if defined(XR_PLATFORM_WEB) || defined(XR_PLATFORM_GLES)
     const bool swapRedBlue = !gli::is_compressed(texture.format()) && gli::block_size(texture.format()) == 4
         && format.Swizzles[gli::SWIZZLE_RED] == GL_BLUE;
     xr_vector<u8> reordered;

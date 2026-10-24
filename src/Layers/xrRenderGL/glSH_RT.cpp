@@ -90,7 +90,7 @@ void CRT::reset_end()
 void CRT::resolve_into(CRT& destination) const
 {
     glReadBuffer(GL_COLOR_ATTACHMENT0);
-#ifndef XR_PLATFORM_WEB // glDrawBuffers below covers it; glDrawBuffer does not exist in GLES
+#if !defined(XR_PLATFORM_WEB) && !defined(XR_PLATFORM_GLES) // glDrawBuffers below covers it; glDrawBuffer does not exist in GLES
     glDrawBuffer(GL_COLOR_ATTACHMENT1);
 #endif
 

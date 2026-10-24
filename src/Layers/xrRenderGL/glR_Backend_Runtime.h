@@ -632,7 +632,7 @@ ICF void CBackend::set_FillMode(u32 _mode)
     if (fill_mode != _mode)
     {
         fill_mode = _mode;
-#ifndef XR_PLATFORM_WEB // wireframe is a debug feature; GLES has no glPolygonMode
+#if !defined(XR_PLATFORM_WEB) && !defined(XR_PLATFORM_GLES) // wireframe is a debug feature; GLES has no glPolygonMode
         glPolygonMode(GL_FRONT_AND_BACK, glStateUtils::ConvertFillMode(_mode));
 #endif
     }
