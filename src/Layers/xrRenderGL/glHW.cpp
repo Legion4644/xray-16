@@ -316,20 +316,74 @@ void CHW::EndScene() { }
 
 void CHW::Present()
 {
-#if 0 // kept for historical reasons
-    RImplementation.Target->phase_flip();
-#else
+    static int s_presentFrame = 0;
+    static bool s_redProbeDone = false;
+    const bool logFrame = (s_presentFrame < 30) || ((s_presentFrame % 300) == 0);
+
+    if (logFrame)
+    {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, pFB);
+        const GLenum fbStatus = glCheckFramebufferStatus(GL_READ_FRAMEBUFFER);
+
+        GLint viewport[4] = { 0, 0, 0, 0 };
+        glGetIntegerv(GL_VIEWPORT, viewport);
+
+        Msg("[GLES-PRESENT] frame=%d pFB=%u readStatus=0x%x complete=%d Device=%ux%u viewport=%d,%d %dx%d",
+            s_presentFrame,
+            static_cast<unsigned int>(pFB),
+            static_cast<unsigned int>(fbStatus),
+            (fbStatus == GL_FRAMEBUFFER_COMPLETE) ? 1 : 0,
+            static_cast<unsigned int>(Device.dwWidth),
+            static_cast<unsigned int>(Device.dwHeight),
+            viewport[0], viewport[1], viewport[2], viewport[3]);
+
+        GLenum e;
+        int n = 0;
+        while ((e = glGetError()) != GL_NO_ERROR && n < 4)
+        {
+            Msg("[GLES-PRESENT] pre-blit error 0x%x", static_cast<unsigned int>(e));
+            ++n;
+        }
+    }
+
     glBindFramebuffer(GL_READ_FRAMEBUFFER, pFB);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+
     glBlitFramebuffer(
-        0, 0, Device.dwWidth, Device.dwHeight,
-        0, 0, Device.dwWidth, Device.dwHeight,
+        0, 0, static_cast<GLsizei>(Device.dwWidth), static_cast<GLsizei>(Device.dwHeight),
+        0, 0, static_cast<GLsizei>(Device.dwWidth), static_cast<GLsizei>(Device.dwHeight),
         GL_COLOR_BUFFER_BIT, GL_NEAREST);
-#endif
+
+    if (logFrame)
+    {
+        GLenum e;
+        int n = 0;
+        while ((e = glGetError()) != GL_NO_ERROR && n < 4)
+        {
+            Msg("[GLES-PRESENT] post-blit error 0x%x", static_cast<unsigned int>(e));
+            ++n;
+        }
+    }
 
 #ifndef XR_PLATFORM_WEB
-    SDL_GL_SwapWindow(m_window); // on the web the frame is presented when the loop callback returns
+    SDL_GL_SwapWindow(m_window);
+
+    if (!s_redProbeDone && s_presentFrame == 10)
+    {
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        SDL_GL_SwapWindow(m_window);
+        Msg("[GLES-PRESENT] red probe swapped at frame 10");
+        s_redProbeDone = true;
+    }
 #endif
+
+    ++s_presentFrame;
+
+    if (BackBufferCount == 0)
+        BackBufferCount = 1;
+
     CurrentBackBuffer = (CurrentBackBuffer + 1) % BackBufferCount;
 }
 
