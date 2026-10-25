@@ -6,7 +6,7 @@
 #define SM_MINMAX
 #endif
 
-#if SUN_QUALITY>2
+#if defined(SUN_QUALITY) && SUN_QUALITY>2
 #define ULTRA_SHADOWS_ON
 #endif //	SUN_QUALITY>2
 
@@ -73,7 +73,7 @@ float4 _main ( v2p_volume I )
   	float4 	P4 	= float4( _P.x, _P.y, _P.z, 1.0);
 	float4 	PS	= mul( m_shadow, P4 );
 	float 	s 	= sunmask( P4 );
-	#if defined	(USE_SJITTER) || SUN_QUALITY==2 // Hight quality
+	#if defined	(USE_SJITTER) || (defined(SUN_QUALITY) && SUN_QUALITY==2) // Hight quality
 	  		s 	*= shadow_high(PS); //shadowtest_sun( PS, float4(0,0,0,0) );
 	#else
 #ifdef SM_MINMAX

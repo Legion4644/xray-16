@@ -32,7 +32,7 @@ float	calc_ssao( float3 P, float3 N, float2 tc, float2 tcJ )
 #endif
 #else	//	SSAO_QUALITY
 
-#if SSAO_QUALITY == 1
+#if defined(SSAO_QUALITY) && SSAO_QUALITY==1
 #define RINGS 2
 #define DIRS 4
 const float rads[3] = float[]
@@ -232,7 +232,7 @@ for (int rad=0; rad < RINGS; rad++)
 //	occ = occ*occ;	
 //	occ = occ*occ;
 //	occ = occ*0.5+0.5;
-#if SSAO_QUALITY==1
+#if defined(SSAO_QUALITY) && SSAO_QUALITY==1
 	occ = (occ+0.3)/(1.0+0.3);
 #else	//	SSAO_QUALITY==1
 	occ = (occ+0.2)/(1.0+0.2);
