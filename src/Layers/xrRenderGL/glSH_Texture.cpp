@@ -198,6 +198,12 @@ void CTexture::Load()
     string_path fn;
     if (FS.exist(fn, "$game_textures$", cName.c_str(), ".ogm"))
     {
+#if defined(XR_ANDROID_GLRENDER) && defined(XR_PLATFORM_GLES)
+        // Theora video textures are not supported on Android GLES yet.
+        // Skip the .ogm path silently to avoid GL_INVALID_OPERATION (0x502).
+        pSurface = 0;
+        return;
+#else
         // AVI
         pTheora = xr_new<CTheoraSurface>();
         m_play_time = 0xFFFFFFFF;
@@ -242,6 +248,7 @@ void CTexture::Load()
                 pSurface = 0;
             }
         }
+#endif
     }
     else if (FS.exist(fn, "$game_textures$", cName.c_str(), ".avi"))
     {
