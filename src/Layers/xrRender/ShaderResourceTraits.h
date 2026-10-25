@@ -7,34 +7,65 @@ namespace xray::render::RENDER_NAMESPACE
 #ifdef USE_OGL
 static void show_compile_errors(cpcstr filename, GLuint program, GLuint shader)
 {
-    GLint length;
+    GLint length = 0;
     GLchar *errors = nullptr, *sources = nullptr;
+    const char* error_text = "";
+    const char* source_text = nullptr;
 
     if (program)
     {
         CHK_GL(glGetProgramiv(program, GL_INFO_LOG_LENGTH, &length));
-        errors = xr_alloc<GLchar>(length);
-        CHK_GL(glGetProgramInfoLog(program, length, nullptr, errors));
+        if (length > 0)
+        {
+            errors = xr_alloc<GLchar>(length + 1);
+            errors[0] = '\0';
+            CHK_GL(glGetProgramInfoLog(program, length, nullptr, errors));
+            errors[length] = '\0';
+            error_text = errors;
+        }
+        else
+        {
+            error_text = "<empty GL info log>";
+        }
     }
     else if (shader)
     {
         CHK_GL(glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &length));
-        errors = xr_alloc<GLchar>(length);
-        CHK_GL(glGetShaderInfoLog(shader, length, nullptr, errors));
+        if (length > 0)
+        {
+            errors = xr_alloc<GLchar>(length + 1);
+            errors[0] = '\0';
+            CHK_GL(glGetShaderInfoLog(shader, length, nullptr, errors));
+            errors[length] = '\0';
+            error_text = errors;
+        }
+        else
+        {
+            error_text = "<empty GL info log>";
+        }
 
         CHK_GL(glGetShaderiv(shader, GL_SHADER_SOURCE_LENGTH, &length));
-        sources = xr_alloc<GLchar>(length);
-        CHK_GL(glGetShaderSource(shader, length, nullptr, sources));
+        if (length > 0)
+        {
+            sources = xr_alloc<GLchar>(length + 1);
+            sources[0] = '\0';
+            CHK_GL(glGetShaderSource(shader, length, nullptr, sources));
+            sources[length] = '\0';
+            source_text = sources;
+        }
+        else
+        {
+            source_text = nullptr;
+        }
     }
 
     Log("! shader compilation failed:", filename);
-    if (errors)
-        Log("! error: ", errors);
+    Log("! error: ", error_text);
 
-    if (sources)
+    if (source_text)
     {
         Log("Shader source:");
-        Log(sources);
+        Log(source_text);
         Log("Shader source end.");
     }
     xr_free(errors);
@@ -120,14 +151,14 @@ inline std::pair<char, GLuint> GLUseBinary(pcstr* buffer, size_t size, const GLe
     return { 'p', program };
 }
 
-#ifdef XR_PLATFORM_WEB
+#if defined(XR_PLATFORM_WEB) || defined(XR_PLATFORM_GLES)
 static GLuint GLDepthOnlyFragmentShader()
 {
     static GLuint shader = 0;
     if (shader)
         return shader;
 
-    constexpr pcstr source = "#version 300 es\nvoid main() {}\n";
+    constexpr pcstr source = "#version 300 es\nprecision mediump float;\nprecision mediump int;\nvoid main() {}\n";
     shader = glCreateShader(GL_FRAGMENT_SHADER);
     CHK_GL(glShaderSource(shader, 1, &source, nullptr));
     CHK_GL(glCompileShader(shader));
@@ -137,7 +168,7 @@ static GLuint GLDepthOnlyFragmentShader()
 
 static GLuint GLLinkMonolithicProgram(pcstr name, GLuint ps, GLuint vs, GLuint gs)
 {
-#ifdef XR_PLATFORM_WEB
+#if defined(XR_PLATFORM_WEB) || defined(XR_PLATFORM_GLES)
     if (!vs)
     {
         Log("! shader program not linked, the vertex stage failed to compile:", name);
@@ -155,8 +186,10 @@ static GLuint GLLinkMonolithicProgram(pcstr name, GLuint ps, GLuint vs, GLuint g
     //if (HW.ShaderBinarySupported)
     //    CHK_GL(glProgramParameteri(program, GL_PROGRAM_BINARY_RETRIEVABLE_HINT, (GLint)GL_TRUE));
 
-    CHK_GL(glAttachShader(program, ps));
-    CHK_GL(glAttachShader(program, vs));
+    if (ps)
+        CHK_GL(glAttachShader(program, ps));
+    if (vs)
+        CHK_GL(glAttachShader(program, vs));
     if (gs)
         CHK_GL(glAttachShader(program, gs));
 #if !defined(XR_PLATFORM_WEB) && !defined(XR_PLATFORM_GLES) // GLSL ES declares output locations in the shader itself
@@ -166,8 +199,10 @@ static GLuint GLLinkMonolithicProgram(pcstr name, GLuint ps, GLuint vs, GLuint g
     CHK_GL(glBindFragDataLocation(program, 2, "SV_Target2"));
 #endif
     CHK_GL(glLinkProgram(program));
-    CHK_GL(glDetachShader(program, ps));
-    CHK_GL(glDetachShader(program, vs));
+    if (ps)
+        CHK_GL(glDetachShader(program, ps));
+    if (vs)
+        CHK_GL(glDetachShader(program, vs));
     if (gs)
         CHK_GL(glDetachShader(program, gs));
 
