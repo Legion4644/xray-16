@@ -132,7 +132,7 @@ float shadow_extreme_quality( float3 tc )
    tc.xy  = tc.xy - ( 1.0 / float( SMAP_size ) * fc );
    tc.z  -= 0.0001;
 
-#if 0// defined(SM_4_1) || defined( SM_5) 
+#if 0 
     // find number of blockers and sum up blocker depth
     for( row = -BFS2; row <= BFS2; row += 2 )
     {
@@ -208,7 +208,7 @@ float shadow_extreme_quality( float3 tc )
     {
         for( int col = -FS2; col <= FS2; col += 2 )
         {
-#if ( defined(SM_5) ) || ( defined(SM_4_1) )
+#if defined(SM_5) || defined(SM_4_1)
             v1[(col+FS2)/2] = textureGatherOffset (s_smap, tc.xy, tc.z, 
                                                    int2( col, row ) );
 #else

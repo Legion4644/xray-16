@@ -426,6 +426,11 @@ HRESULT CRender::shader_compile(pcstr name, IReader* fs, pcstr pFunctionName,
     // So it is more handy to disable its use for mac as for now.
 #endif
 
+#if defined(XR_PLATFORM_GLES)
+    // Android/GLES: force manual shadow gather path and avoid textureGather.
+    appendShaderOption(true, "PS_4", "1");
+#endif
+
     // Minmax SM
     appendShaderOption(o.minmax_sm, "USE_MINMAX_SM", "1");
 
