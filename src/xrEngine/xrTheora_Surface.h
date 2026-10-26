@@ -77,7 +77,7 @@ public:
     CTheoraStream* GetRGBStream() const { return m_rgb; }
     CTheoraStream* GetAlphaStream() const { return m_alpha; }
 
-    void GetTelemetry(TheoraTelemetry& out) const;
+    void GetTelemetry(TheoraTelemetry& out);
 };
 
 #endif // xrTheora_SurfaceH

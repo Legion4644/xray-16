@@ -183,7 +183,7 @@ u32 CTheoraSurface::Height(bool bRealSize)
     ;
 }
 
-void CTheoraSurface::GetTelemetry(TheoraTelemetry& out) const
+void CTheoraSurface::GetTelemetry(TheoraTelemetry& out)
 {
     if (!m_rgb)
         return;
