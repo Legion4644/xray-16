@@ -304,6 +304,11 @@ CApplication::CApplication(pcstr commandLine, GameModule* game, const std::array
     }
     if (g_pGamePersistent)
         g_pGamePersistent->OnAppStart();
+// [gles-noconsole-guard]
+#ifdef XR_PLATFORM_GLES
+    if (strstr(Core.Params, "-no_console") && Console)
+        Console->Hide();
+#endif
 
 #ifdef XR_PLATFORM_GLES
     if (strstr(Core.Params, "-no_console") && Console)

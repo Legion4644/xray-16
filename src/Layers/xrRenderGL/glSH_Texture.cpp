@@ -235,8 +235,15 @@ void CTexture::Load()
         pTheora->Play(TRUE, Device.dwTimeContinual);
 
         GLuint pTexture = 0;
+#ifdef XR_PLATFORM_GLES
+        // GLES UI has no YUV2RGB shader and no pow2 padding requirement;
+        // use the real video size so the frame maps 1:1 without letterbox.
+        u32 _w = pTheora->Width(true);
+        u32 _h = pTheora->Height(true);
+#else
         u32 _w = pTheora->Width(false);
         u32 _h = pTheora->Height(false);
+#endif
 
         ClearGLErrors();
 

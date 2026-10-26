@@ -192,6 +192,13 @@ void CTheoraSurface::DecompressFrame(u32* data, u32 _width, int& _pos)
     u32 width = Width(true);
     u32 height = Height(true);
 
+#ifdef XR_PLATFORM_GLES
+    // GLES UI shader does NOT convert YUV->RGB, so we must always take the CPU path.
+    const bool kGlesForceCpuYuv2Rgb = true;
+#else
+    const bool kGlesForceCpuYuv2Rgb = false;
+#endif
+
     static const float K = 0.256788f + 0.504129f + 0.097906f;
 
     // we use ffmpeg2theora for encoding, so only OC_PF_420 valid
@@ -204,7 +211,7 @@ void CTheoraSurface::DecompressFrame(u32* data, u32 _width, int& _pos)
 
         u32 pos = 0;
 
-        if (!bShaderYUV2RGB)
+        if (!bShaderYUV2RGB || kGlesForceCpuYuv2Rgb)
         {
             for (u32 h = 0; h < height; ++h)
             {

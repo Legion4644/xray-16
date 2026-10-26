@@ -134,6 +134,14 @@ void CConsole::RemoveCommand(IConsole_Command* cc)
 
 void CConsole::OnFrame()
 {
+// [gles-noconsole-guard]
+#ifdef XR_PLATFORM_GLES
+    if (strstr(Core.Params, "-no_console"))
+    {
+        if (bVisible) Hide();
+        return;
+    }
+#endif
 #ifdef XR_PLATFORM_GLES
     if (strstr(Core.Params, "-no_console") && bVisible)
     {
@@ -508,6 +516,11 @@ void CConsole::ExecuteCommand(pcstr cmd_str, bool record_cmd)
 
 void CConsole::Show()
 {
+// [gles-noconsole-guard]
+#ifdef XR_PLATFORM_GLES
+    if (strstr(Core.Params, "-no_console"))
+        return;
+#endif
 #ifdef XR_PLATFORM_GLES
     if (strstr(Core.Params, "-no_console"))
         return;
