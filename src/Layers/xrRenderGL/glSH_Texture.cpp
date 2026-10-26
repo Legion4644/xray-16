@@ -85,41 +85,48 @@ void CTexture::apply_load(CBackend& cmd_list, u32 dwStage)
 
 void CTexture::apply_theora(CBackend& cmd_list, u32 dwStage)
 {
-    CHK_GL(glActiveTexture(GL_TEXTURE0 + dwStage));
-    CHK_GL(glBindTexture(desc, pSurface));
-
-    if (pTheora->Update(m_play_time != 0xFFFFFFFF ? m_play_time : Device.dwTimeContinual))
-    {
-        u32* pBits;
-        u32 _w = pTheora->Width(true);
-        u32 _h = pTheora->Height(true);
-
-#ifdef XR_PLATFORM_WEB
-        xr_vector<u32> frame(_w * _h);
-        int framePos = 0;
-        pTheora->DecompressFrame(frame.data(), 0, framePos);
-        for (u32& texel : frame) // BGRA -> RGBA
-            texel = (texel & 0xff00ff00u) | ((texel & 0x00ff0000u) >> 16) | ((texel & 0x000000ffu) << 16);
-        CHK_GL(glTexSubImage2D(desc, 0, 0, 0, _w, _h, GL_RGBA, GL_UNSIGNED_BYTE, frame.data()));
-        UNUSED(pBits);
+    if (!pTheora || !pSurface)
         return;
+
+    if (!pTheora->Update(m_play_time != 0xFFFFFFFF ? m_play_time : Device.dwTimeContinual))
+        return;
+
+    const u32 w = pTheora->Width(true);
+    const u32 h = pTheora->Height(true);
+    if (!w || !h)
+        return;
+
+    static xr_vector<u32> frame;
+    frame.resize(static_cast<size_t>(w) * static_cast<size_t>(h));
+
+    int pos = 0;
+    pTheora->DecompressFrame(frame.data(), 0, pos);
+
+#ifdef XR_PLATFORM_GLES
+    // TheoraSurface/desktop path commonly uses BGRA byte order.
+    // Android GLES upload below uses RGBA8, so swap channels on CPU.
+    for (size_t idx = 0; idx < frame.size(); ++idx)
+    {
+        const u32 px = frame[idx];
+        const u32 b = px & 0x000000ffu;
+        const u32 g = (px >> 8) & 0x000000ffu;
+        const u32 r = (px >> 16) & 0x000000ffu;
+        const u32 a = (px >> 24) & 0x000000ffu;
+        frame[idx] = (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
+    const GLenum format = GL_RGBA;
+#else
+    const GLenum format = GL_BGRA;
 #endif
 
-        // Clear and map buffer for writing
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pBuffer);
-        CHK_GL(glBufferData(GL_PIXEL_UNPACK_BUFFER, _w * _h * 4, nullptr, GL_STREAM_DRAW)); // Invalidate buffer
-        CHK_GL(pBits = (u32*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY));
-
-        // Write to the buffer and copy it to the texture
-        int _pos = 0;
-        pTheora->DecompressFrame(pBits, 0, _pos);
-        CHK_GL(glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER));
-        CHK_GL(glTexSubImage2D(desc, 0, 0, 0, _w, _h, GL_BGRA, GL_UNSIGNED_BYTE, nullptr));
-
-        // Unmap the buffer to restore normal texture functionality
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-    }
-};
+    glBindTexture(desc, pSurface);
+    CHK_GL(glTexSubImage2D(
+        desc, 0, 0, 0,
+        static_cast<GLsizei>(w), static_cast<GLsizei>(h),
+        format, GL_UNSIGNED_BYTE, frame.data()));
+}
+;
 
 void CTexture::apply_avi(CBackend& cmd_list, u32 dwStage) const
 {
@@ -198,57 +205,73 @@ void CTexture::Load()
     string_path fn;
     if (FS.exist(fn, "$game_textures$", cName.c_str(), ".ogm"))
     {
-#if defined(XR_ANDROID_GLRENDER) && defined(XR_PLATFORM_GLES)
-        // Theora video textures are not supported on Android GLES yet.
-        // Skip the .ogm path silently to avoid GL_INVALID_OPERATION (0x502).
-        pSurface = 0;
-        return;
-#else
-        // AVI
         pTheora = xr_new<CTheoraSurface>();
         m_play_time = 0xFFFFFFFF;
 
         if (!pTheora->Load(fn))
         {
+            Msg("! GL: failed to open video stream: %s", fn);
             xr_delete(pTheora);
-            FATAL("Can't open video stream");
+            pTheora = nullptr;
+            pSurface = 0;
+            return;
         }
-        else
-        {
-            flags.MemoryUsage = pTheora->Width(true) * pTheora->Height(true) * 4;
-            pTheora->Play(TRUE, Device.dwTimeContinual);
 
-            // Now create texture
-            GLuint pTexture = 0;
-            u32 _w = pTheora->Width(false);
-            u32 _h = pTheora->Height(false);
+        flags.MemoryUsage = pTheora->Width(true) * pTheora->Height(true) * 4;
+        pTheora->Play(TRUE, Device.dwTimeContinual);
 
-            ClearGLErrors();
+        GLuint pTexture = 0;
+        u32 _w = pTheora->Width(false);
+        u32 _h = pTheora->Height(false);
 
-            glGenBuffers(1, &pBuffer);
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pBuffer);
-            CHK_GL(glBufferData(GL_PIXEL_UNPACK_BUFFER, flags.MemoryUsage, nullptr, GL_STREAM_DRAW));
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        ClearGLErrors();
 
-            const texture_upload_unit uploadUnit(GL_TEXTURE_2D);
-            glGenTextures(1, &pTexture);
-            glBindTexture(GL_TEXTURE_2D, pTexture);
-            CHK_GL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0));
-            CHK_GL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0));
-            CHK_GL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, _w, _h, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr));
+        // Direct CPU upload path; avoids PBO/BGRA pitfalls on Android GLES.
+        pBuffer = 0;
 
-            pSurface = pTexture;
-            desc = GL_TEXTURE_2D;
-            size_set(_w, _h);
-            GLenum err = glGetError();
-            if (err != GL_NO_ERROR)
-            {
-                Msg("Invalid video stream: 0x%x", err);
-                xr_delete(pTheora);
-                pSurface = 0;
-            }
-        }
+        const texture_upload_unit uploadUnit(GL_TEXTURE_2D);
+        glGenTextures(1, &pTexture);
+        glBindTexture(GL_TEXTURE_2D, pTexture);
+        CHK_GL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0));
+        CHK_GL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0));
+        CHK_GL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+        CHK_GL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+        CHK_GL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+        CHK_GL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+
+#ifdef XR_PLATFORM_GLES
+        CHK_GL(glTexImage2D(
+            GL_TEXTURE_2D, 0, GL_RGBA8,
+            static_cast<GLsizei>(_w), static_cast<GLsizei>(_h),
+            0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr));
+#else
+        CHK_GL(glTexImage2D(
+            GL_TEXTURE_2D, 0, GL_RGBA8,
+            static_cast<GLsizei>(_w), static_cast<GLsizei>(_h),
+            0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr));
 #endif
+
+        pSurface = pTexture;
+        desc = GL_TEXTURE_2D;
+        size_set(_w, _h);
+
+        const GLenum err = glGetError();
+        if (err != GL_NO_ERROR)
+        {
+            Msg("! GL: invalid video stream: 0x%x", static_cast<unsigned int>(err));
+            xr_delete(pTheora);
+            pTheora = nullptr;
+            pSurface = 0;
+            return;
+        }
+
+        static bool s_logged_video_enabled = false;
+        if (!s_logged_video_enabled)
+        {
+            Msg("* GL: Theora video texture enabled: %s", fn);
+            s_logged_video_enabled = true;
+        }
+
     }
     else if (FS.exist(fn, "$game_textures$", cName.c_str(), ".avi"))
     {
