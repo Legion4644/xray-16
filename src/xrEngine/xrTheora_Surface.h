@@ -58,6 +58,9 @@ public:
     bool IsPlaying() { return playing; }
     u32 Width(bool bRealSize);
     u32 Height(bool bRealSize);
+
+    CTheoraStream* GetRGBStream() const { return m_rgb; }
+    CTheoraStream* GetAlphaStream() const { return m_alpha; }
 };
 
 #endif // xrTheora_SurfaceH

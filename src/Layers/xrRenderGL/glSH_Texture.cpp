@@ -137,9 +137,9 @@ void CTexture::apply_theora(CBackend& cmd_list, u32 dwStage)
 
         const GLenum err_after = glGetError();
 
-        const u32 tm_play = m_play_time != 0xFFFFFFFF ? m_play_time : Device.dwTimeContinual;
-        const u32 d_frame = pTheora->m_rgb ? pTheora->m_rgb->d_frame : 0;
-        const i64 granulepos = pTheora->m_rgb ? pTheora->m_rgb->t_state.granulepos : -1;
+        CTheoraStream* rgb_stream = pTheora->GetRGBStream();
+        const u32 d_frame = rgb_stream ? static_cast<u32>(rgb_stream->GetDecodedFrame()) : 0;
+        const i64 granulepos = rgb_stream ? rgb_stream->GetGranulePos() : -1;
 
         Msg("[VIDEODIAG] Theora upload #%u: tm_play=%u, d_frame=%u, granulepos=%lld, glErr_before=0x%x, glErr_after=0x%x",
             s_upload_count, tm_play, d_frame, granulepos, err_before, err_after);
@@ -153,7 +153,8 @@ void CTexture::apply_theora(CBackend& cmd_list, u32 dwStage)
             const u32 cpu_px2 = (frame.size() > 2) ? frame[2] : 0;
             const u32 cpu_px3 = (frame.size() > 3) ? frame[3] : 0;
 
-            yuv_buffer* yuv = pTheora->m_rgb ? pTheora->m_rgb->CurrentFrame() : nullptr;
+            CTheoraStream* rgb_stream = pTheora->GetRGBStream();
+            yuv_buffer* yuv = rgb_stream ? rgb_stream->CurrentFrame() : nullptr;
             if (yuv)
             {
                 u64 sumY = 0;

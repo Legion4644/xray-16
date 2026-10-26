@@ -39,6 +39,9 @@ public:
     bool Decode(u32 tm_play);
 
     yuv_buffer* CurrentFrame() { return &t_yuv_buffer; }
+
+    ogg_int64_t GetDecodedFrame() const { return d_frame; }
+    ogg_int64_t GetGranulePos() const { return t_state.granulepos; }
 };
 
 #endif // xrTheora_StreamH
