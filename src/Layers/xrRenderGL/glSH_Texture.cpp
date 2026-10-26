@@ -159,10 +159,10 @@ void CTexture::apply_theora(CBackend& cmd_list, u32 dwStage)
             {
                 u64 sumY = 0;
                 u32 countY = 0;
-                const u32 strideY = yuv->y_stride;
+                const ptrdiff_t strideY = yuv->y_stride;
                 for (u32 yy = 0; yy < h; yy += 8)
                 {
-                    const u8* row = yuv->y + strideY * yy;
+                    const u8* row = yuv->y + strideY * static_cast<ptrdiff_t>(yy);
                     for (u32 xx = 0; xx < w; xx += 8)
                     {
                         sumY += row[xx];
