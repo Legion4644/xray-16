@@ -402,7 +402,7 @@ IC bool is_empty_line_now(IReader* F)
 void CInifile::Load(IReader* F, pcstr path, allow_include_func_t allow_include_func)
 {
 
-Msg("[DIAG] INI Load: Path='%s', Instance=%p", path ? path : "NULL", this);
+// disabled diagnostic: Msg("[DIAG] INI Load: Path='%s', Instance=%p", path ? path : "NULL", this);
 
     ZoneScoped;
 
@@ -457,13 +457,13 @@ Msg("[DIAG] INI Load: Path='%s', Instance=%p", path ? path : "NULL", this);
             string_path inc_name;
             R_ASSERT(path && path[0]);
             if (_GetItem(str, 1, inc_name, '"'))
-            Msg("[DIAG-INC] P1 enter: inc_name='%s' path='%s'", inc_name, path ? path : "NULL");
+            // disabled diagnostic: Msg("[DIAG-INC] P1 enter: inc_name='%s' path='%s'", inc_name, path ? path : "NULL");
             {
                 string_path fn, inc_path, folder;
                 strconcat(sizeof(fn), fn, path, inc_name);
                 _splitpath(fn, inc_path, folder, 0, 0);
                 xr_strcat(inc_path, sizeof(inc_path), folder);
-                Msg("[DIAG-INC] P2 paths: fn='%s' inc_path='%s'", fn, inc_path);
+                // disabled diagnostic: Msg("[DIAG-INC] P2 paths: fn='%s' inc_path='%s'", fn, inc_path);
 
                 const auto loadFile = [&](const string_path _fn, const string_path name)
                 {
@@ -488,7 +488,7 @@ Msg("[DIAG] INI Load: Path='%s', Instance=%p", path ? path : "NULL", this);
                 {
                     FS_FileSet fset;
                     FS.file_list(fset, inc_path, FS_ListFiles, inc_name);
-                    Msg("[DIAG-INC] P3 filelist: inc_path='%s' found=%d", inc_path, (int)fset.size());
+                    // disabled diagnostic: Msg("[DIAG-INC] P3 filelist: inc_path='%s' found=%d", inc_path, (int)fset.size());
 
                     for (FS_FileSet::iterator it = fset.begin(); it != fset.end(); it++)
                     {

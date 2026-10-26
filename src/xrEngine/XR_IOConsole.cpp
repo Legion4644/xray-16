@@ -134,6 +134,14 @@ void CConsole::RemoveCommand(IConsole_Command* cc)
 
 void CConsole::OnFrame()
 {
+#ifdef XR_PLATFORM_GLES
+    if (strstr(Core.Params, "-no_console") && bVisible)
+    {
+        Hide();
+        return;
+    }
+#endif
+
     ZoneScoped;
 
     if (Device.dwFrame % 10 == 0)
@@ -500,6 +508,11 @@ void CConsole::ExecuteCommand(pcstr cmd_str, bool record_cmd)
 
 void CConsole::Show()
 {
+#ifdef XR_PLATFORM_GLES
+    if (strstr(Core.Params, "-no_console"))
+        return;
+#endif
+
     if (bVisible)
     {
         return;
