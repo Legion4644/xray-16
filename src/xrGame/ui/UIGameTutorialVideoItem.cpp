@@ -12,7 +12,7 @@
 #include "Include/xrRender/UIRender.h"
 #include "xrUICore/Cursor/UICursor.h"
 
-#include "xrCore/Platform.hpp"
+#include "Common/Platform.hpp"
 
 extern ENGINE_API bool bShowPauseString;
 
