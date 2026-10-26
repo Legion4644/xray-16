@@ -185,10 +185,17 @@ bool CTheoraStream::Decode(u32 in_tm_play)
     t_frame = iFloor(in_tm_play * fpms);
     ogg_int64_t k_frame = t_frame - t_frame % key_rate;
 
+    const bool video_diag = strstr(Core.Params, "-video_diag") != nullptr;
+
+    static u32 s_decode_calls = 0;
+    static u32 s_decode_success = 0;
+    ++s_decode_calls;
+
     if (d_frame < t_frame)
     {
         bool result = false;
         ogg_packet o_packet;
+        int packetin_ret = 0;
         while (d_frame < t_frame)
         {
             while (false == result)
@@ -209,8 +216,8 @@ bool CTheoraStream::Decode(u32 in_tm_play)
                     VERIFY((d_frame != k_frame) || ((d_frame == k_frame) && is_key));
                     // real decode
                     //. dbg_log ((stderr,"%04d: decode\n",d_frame));
-                    [[maybe_unused]] int res = theora_decode_packetin(&t_state, &o_packet);
-                    VERIFY(res != OC_BADPACKET);
+                    packetin_ret = theora_decode_packetin(&t_state, &o_packet);
+                    VERIFY(packetin_ret != OC_BADPACKET);
                     //. dbg_log ((stderr,"%04d: granule frame\n",theora_granule_frame(&t_state,t_state.granulepos)));
                     if (d_frame >= t_frame)
                         result = true;
@@ -235,6 +242,16 @@ bool CTheoraStream::Decode(u32 in_tm_play)
         VERIFY(d_frame == t_frame);
         theora_decode_YUVout(&t_state, &t_yuv_buffer);
         //. dbg_log ((stderr,"%04d: yuv out\n",d_frame));
+
+        if (result)
+            ++s_decode_success;
+
+        if (video_diag && (d_frame == 1 || d_frame == 30 || d_frame == 60))
+        {
+            Msg("[VIDEODIAG] TheoraStream::Decode: d_frame=%d, tm_play=%u, t_frame=%lld, k_frame=%lld, packetin_ret=%d, granulepos=%lld, decode_calls=%u, decode_success=%u",
+                d_frame, in_tm_play, t_frame, k_frame, packetin_ret, t_state.granulepos, s_decode_calls, s_decode_success);
+        }
+
         return true;
     }
     return false;
