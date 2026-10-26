@@ -183,6 +183,27 @@ u32 CTheoraSurface::Height(bool bRealSize)
     ;
 }
 
+void CTheoraSurface::GetTelemetry(TheoraTelemetry& out) const
+{
+    if (!m_rgb)
+        return;
+
+    yuv_buffer* yuv = m_rgb->CurrentFrame();
+    out.d_frame = static_cast<u32>(m_rgb->GetDecodedFrame());
+    out.granulepos = m_rgb->GetGranulePos();
+    out.width = Width(true);
+    out.height = Height(true);
+
+    if (yuv)
+    {
+        out.y_stride = yuv->y_stride;
+        out.uv_stride = yuv->uv_stride;
+        out.y_ptr = yuv->y;
+        out.u_ptr = yuv->u;
+        out.v_ptr = yuv->v;
+    }
+}
+
 void CTheoraSurface::DecompressFrame(u32* data, u32 _width, int& _pos)
 {
     VERIFY(m_rgb);

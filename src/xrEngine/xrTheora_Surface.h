@@ -9,6 +9,19 @@
 // refs
 class CTheoraStream;
 
+struct TheoraTelemetry
+{
+    u32 d_frame = 0;
+    s64 granulepos = -1;
+    u32 width = 0;
+    u32 height = 0;
+    ptrdiff_t y_stride = 0;
+    ptrdiff_t uv_stride = 0;
+    const u8* y_ptr = nullptr;
+    const u8* u_ptr = nullptr;
+    const u8* v_ptr = nullptr;
+};
+
 class ENGINE_API CTheoraSurface
 {
 #ifdef SDL_OUTPUT
@@ -61,6 +74,8 @@ public:
 
     CTheoraStream* GetRGBStream() const { return m_rgb; }
     CTheoraStream* GetAlphaStream() const { return m_alpha; }
+
+    void GetTelemetry(TheoraTelemetry& out) const;
 };
 
 #endif // xrTheora_SurfaceH

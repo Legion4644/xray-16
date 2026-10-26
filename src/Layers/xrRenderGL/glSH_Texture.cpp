@@ -137,12 +137,13 @@ void CTexture::apply_theora(CBackend& cmd_list, u32 dwStage)
 
         const GLenum err_after = glGetError();
 
-        CTheoraStream* rgb_stream = pTheora->GetRGBStream();
-        const u32 d_frame = rgb_stream ? static_cast<u32>(rgb_stream->GetDecodedFrame()) : 0;
-        const i64 granulepos = rgb_stream ? rgb_stream->GetGranulePos() : -1;
+        const u32 tm_play = (m_play_time != 0xFFFFFFFF) ? m_play_time : Device.dwTimeContinual;
+
+        TheoraTelemetry telemetry;
+        pTheora->GetTelemetry(telemetry);
 
         Msg("[VIDEODIAG] Theora upload #%u: tm_play=%u, d_frame=%u, granulepos=%lld, glErr_before=0x%x, glErr_after=0x%x",
-            s_upload_count, tm_play, d_frame, granulepos, err_before, err_after);
+            s_upload_count, tm_play, telemetry.d_frame, telemetry.granulepos, err_before, err_after);
 
         if (!frame.empty())
         {
@@ -153,30 +154,23 @@ void CTexture::apply_theora(CBackend& cmd_list, u32 dwStage)
             const u32 cpu_px2 = (frame.size() > 2) ? frame[2] : 0;
             const u32 cpu_px3 = (frame.size() > 3) ? frame[3] : 0;
 
-            CTheoraStream* rgb_stream = pTheora->GetRGBStream();
-            yuv_buffer* yuv = rgb_stream ? rgb_stream->CurrentFrame() : nullptr;
-            if (yuv)
+            if (telemetry.y_ptr)
             {
                 u64 sumY = 0;
                 u32 countY = 0;
-                const ptrdiff_t strideY = yuv->y_stride;
-                for (u32 yy = 0; yy < h; yy += 8)
+                const ptrdiff_t strideY = telemetry.y_stride;
+                for (u32 yy = 0; yy < telemetry.height; yy += 8)
                 {
-                    const u8* row = yuv->y + strideY * static_cast<ptrdiff_t>(yy);
-                    for (u32 xx = 0; xx < w; xx += 8)
+                    const u8* row = telemetry.y_ptr + strideY * static_cast<ptrdiff_t>(yy);
+                    for (u32 xx = 0; xx < telemetry.width; xx += 8)
                     {
                         sumY += row[xx];
                         ++countY;
                     }
                 }
                 const u32 avgY = countY ? static_cast<u32>(sumY / countY) : 0;
-                const ptrdiff_t y_stride = yuv->y_stride;
-                const ptrdiff_t uv_stride = yuv->uv_stride;
-                const u8* y_ptr = yuv->y;
-                const u8* u_ptr = yuv->u;
-                const u8* v_ptr = yuv->v;
                 Msg("[VIDEODIAG]   CPU: avgY=%u (black=16, zero=0), y_stride=%td, uv_stride=%td, y_ptr=%p, u_ptr=%p, v_ptr=%p, px0=%08x px1=%08x px2=%08x px3=%08x, center=%08x",
-                    avgY, y_stride, uv_stride, y_ptr, u_ptr, v_ptr, cpu_px0, cpu_px1, cpu_px2, cpu_px3, cpu_center_px);
+                    avgY, telemetry.y_stride, telemetry.uv_stride, telemetry.y_ptr, telemetry.u_ptr, telemetry.v_ptr, cpu_px0, cpu_px1, cpu_px2, cpu_px3, cpu_center_px);
             }
             else
             {
