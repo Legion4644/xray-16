@@ -356,6 +356,21 @@ void CHW::Present()
         BackBufferCount = 1;
 
     CurrentBackBuffer = (CurrentBackBuffer + 1) % BackBufferCount;
+
+    static bool s_logged_present_once = false;
+    if (!s_logged_present_once)
+    {
+        GLfloat clearColor[4] = {0};
+        glGetFloatv(GL_COLOR_CLEAR_VALUE, clearColor);
+        GLint viewport[4] = {0};
+        glGetIntegerv(GL_VIEWPORT, viewport);
+        int dw = 0, dh = 0;
+        SDL_GL_GetDrawableSize(m_window, &dw, &dh);
+        Msg("[VIDEODIAG] CHW::Present: clearColor=(%.3f,%.3f,%.3f,%.3f) viewport=(%d,%d,%d,%d) drawable=(%d,%d)",
+            clearColor[0], clearColor[1], clearColor[2], clearColor[3],
+            viewport[0], viewport[1], viewport[2], viewport[3], dw, dh);
+        s_logged_present_once = true;
+    }
 }
 
 DeviceState CHW::GetDeviceState() const

@@ -124,58 +124,58 @@ void CTexture::apply_theora(CBackend& cmd_list, u32 dwStage)
     static u32 s_upload_count = 0;
     ++s_upload_count;
 
-    if (video_diag && (s_upload_count <= 5 || s_upload_count % 30 == 0))
+    const bool log_this_frame = (s_upload_count <= 5) || (s_upload_count % 30 == 0);
+
+    while (glGetError() != GL_NO_ERROR) {}
+
+    const GLenum err_before = glGetError();
+
+    CHK_GL(glTexSubImage2D(
+        desc, 0, 0, 0,
+        static_cast<GLsizei>(w), static_cast<GLsizei>(h),
+        format, GL_UNSIGNED_BYTE, frame.data()));
+
+    const GLenum err_after = glGetError();
+
+    const u32 tm_play = (m_play_time != 0xFFFFFFFF) ? m_play_time : Device.dwTimeContinual;
+
+    TheoraTelemetry telemetry;
+    pTheora->GetTelemetry(telemetry);
+
+    if (log_this_frame)
     {
-        while (glGetError() != GL_NO_ERROR) {}
-
-        const GLenum err_before = glGetError();
-
-        CHK_GL(glTexSubImage2D(
-            desc, 0, 0, 0,
-            static_cast<GLsizei>(w), static_cast<GLsizei>(h),
-            format, GL_UNSIGNED_BYTE, frame.data()));
-
-        const GLenum err_after = glGetError();
-
-        const u32 tm_play = (m_play_time != 0xFFFFFFFF) ? m_play_time : Device.dwTimeContinual;
-
-        TheoraTelemetry telemetry;
-        pTheora->GetTelemetry(telemetry);
-
         Msg("[VIDEODIAG] Theora upload #%u: tm_play=%u, d_frame=%u, granulepos=%lld, glErr_before=0x%x, glErr_after=0x%x",
             s_upload_count, tm_play, telemetry.d_frame, telemetry.granulepos, err_before, err_after);
+    }
 
-        if (!frame.empty())
+    if (!frame.empty())
+    {
+        const size_t center_idx = (static_cast<size_t>(h) / 2) * static_cast<size_t>(w) + (static_cast<size_t>(w) / 2);
+        const u32 cpu_center_px = (center_idx < frame.size()) ? frame[center_idx] : 0;
+        const u32 cpu_px0 = frame[0];
+        const u32 cpu_px1 = (frame.size() > 1) ? frame[1] : 0;
+        const u32 cpu_px2 = (frame.size() > 2) ? frame[2] : 0;
+        const u32 cpu_px3 = (frame.size() > 3) ? frame[3] : 0;
+
+        if (telemetry.y_ptr)
         {
-            const size_t center_idx = (static_cast<size_t>(h) / 2) * static_cast<size_t>(w) + (static_cast<size_t>(w) / 2);
-            const u32 cpu_center_px = (center_idx < frame.size()) ? frame[center_idx] : 0;
-            const u32 cpu_px0 = frame[0];
-            const u32 cpu_px1 = (frame.size() > 1) ? frame[1] : 0;
-            const u32 cpu_px2 = (frame.size() > 2) ? frame[2] : 0;
-            const u32 cpu_px3 = (frame.size() > 3) ? frame[3] : 0;
-
-            if (telemetry.y_ptr)
+            u64 sumY = 0;
+            u32 countY = 0;
+            const ptrdiff_t strideY = telemetry.y_stride;
+            for (u32 yy = 0; yy < telemetry.height; yy += 8)
             {
-                u64 sumY = 0;
-                u32 countY = 0;
-                const ptrdiff_t strideY = telemetry.y_stride;
-                for (u32 yy = 0; yy < telemetry.height; yy += 8)
+                const u8* row = telemetry.y_ptr + strideY * static_cast<ptrdiff_t>(yy);
+                for (u32 xx = 0; xx < telemetry.width; xx += 8)
                 {
-                    const u8* row = telemetry.y_ptr + strideY * static_cast<ptrdiff_t>(yy);
-                    for (u32 xx = 0; xx < telemetry.width; xx += 8)
-                    {
-                        sumY += row[xx];
-                        ++countY;
-                    }
+                    sumY += row[xx];
+                    ++countY;
                 }
-                const u32 avgY = countY ? static_cast<u32>(sumY / countY) : 0;
+            }
+            const u32 avgY = countY ? static_cast<u32>(sumY / countY) : 0;
+            if (log_this_frame)
+            {
                 Msg("[VIDEODIAG]   CPU: avgY=%u (black=16, zero=0), y_stride=%td, uv_stride=%td, y_ptr=%p, u_ptr=%p, v_ptr=%p, px0=%08x px1=%08x px2=%08x px3=%08x, center=%08x",
                     avgY, telemetry.y_stride, telemetry.uv_stride, telemetry.y_ptr, telemetry.u_ptr, telemetry.v_ptr, cpu_px0, cpu_px1, cpu_px2, cpu_px3, cpu_center_px);
-            }
-            else
-            {
-                Msg("[VIDEODIAG]   CPU: px0=%08x px1=%08x px2=%08x px3=%08x, center=%08x",
-                    cpu_px0, cpu_px1, cpu_px2, cpu_px3, cpu_center_px);
             }
 
             GLuint prev_draw_fbo = 0, prev_read_fbo = 0, prev_tex = 0;
@@ -212,16 +212,17 @@ void CTexture::apply_theora(CBackend& cmd_list, u32 dwStage)
             gpu_px = (readback[3] << 24) | (readback[2] << 16) | (readback[1] << 8) | readback[0];
 #endif
 
-            Msg("[VIDEODIAG]   GPU readback center: raw_bytes=%02x%02x%02x%02x, packed_cpu_fmt=%08x vs CPU center=%08x",
-                readback[0], readback[1], readback[2], readback[3], gpu_px, cpu_center_px);
+            if (log_this_frame)
+            {
+                Msg("[VIDEODIAG]   GPU readback center: raw_bytes=%02x%02x%02x%02x, packed_cpu_fmt=%08x vs CPU center=%08x",
+                    readback[0], readback[1], readback[2], readback[3], gpu_px, cpu_center_px);
+            }
         }
-    }
-    else
-    {
-        CHK_GL(glTexSubImage2D(
-            desc, 0, 0, 0,
-            static_cast<GLsizei>(w), static_cast<GLsizei>(h),
-            format, GL_UNSIGNED_BYTE, frame.data()));
+        else if (log_this_frame)
+        {
+            Msg("[VIDEODIAG]   CPU: px0=%08x px1=%08x px2=%08x px3=%08x, center=%08x",
+                cpu_px0, cpu_px1, cpu_px2, cpu_px3, cpu_center_px);
+        }
     }
 
     static bool s_logged_first_frame = false;
