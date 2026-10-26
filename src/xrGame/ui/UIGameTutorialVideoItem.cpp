@@ -12,6 +12,8 @@
 #include "Include/xrRender/UIRender.h"
 #include "xrUICore/Cursor/UICursor.h"
 
+#include "xrCore/Platform.hpp"
+
 extern ENGINE_API bool bShowPauseString;
 
 //-----------------------------------------------------------------------------
@@ -112,6 +114,18 @@ void CUISequenceVideoItem::Load(CUIXml* xml, int idx)
 void CUISequenceVideoItem::Update()
 {
     inherited::Update();
+
+#ifdef XR_PLATFORM_ANDROID
+    // On Android, skip video playback entirely to avoid green quad issue
+    if (m_flags.test(etiPlaying))
+    {
+        m_flags.set(etiPlaying, FALSE);
+        if (m_texture->HasTexture())
+            m_texture->video_Stop();
+    }
+    return;
+#endif
+
     if (GetUICursor().IsVisible())
     {
         m_flags.set(etiStoredCursorState, TRUE);
@@ -178,6 +192,15 @@ void CUISequenceVideoItem::Update()
 
 void CUISequenceVideoItem::OnRender()
 {
+#ifdef XR_PLATFORM_ANDROID
+    // On Android, skip video rendering to avoid green quad
+    if (m_texture->HasTexture())
+    {
+        m_texture->video_Stop();
+    }
+    return;
+#endif
+
     if (!m_texture->HasTexture() && m_wnd->GetShader() && m_wnd->GetShader()->inited())
     {
         GEnv.UIRender->SetShader(*m_wnd->GetShader());
@@ -188,6 +211,13 @@ void CUISequenceVideoItem::OnRender()
 
 void CUISequenceVideoItem::Start()
 {
+#ifdef XR_PLATFORM_ANDROID
+    // On Android, skip video playback entirely
+    Msg("[VIDEODIAG] skipped intro: video_item_start");
+    m_flags.set(etiPlaying, FALSE);
+    return;
+#endif
+
     inherited::Start();
     m_flags.set(etiStoredPauseState, Device.Paused());
 

@@ -16,6 +16,7 @@ public:
 
     virtual bool GetBaseTextureResolution(Fvector2& res) = 0;
     virtual xrImTextureData GetImGuiTextureId() = 0;
+    virtual bool IsVideoTexture() const { return false; }
 };
 
 #endif //	UIShader_included

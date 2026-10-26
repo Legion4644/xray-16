@@ -385,6 +385,10 @@ bool allow_intro()
     if ((0 != strstr(Core.Params, "-nointro")))
         return false;
 
+#ifdef XR_PLATFORM_ANDROID
+    return false;
+#endif
+
     return true;
 }
 
@@ -393,10 +397,28 @@ bool allow_game_intro()
     return !strstr(Core.Params, "-nogameintro");
 }
 
+#ifdef XR_PLATFORM_ANDROID
+inline bool android_skip_intro(const char* name)
+{
+    Msg("[VIDEODIAG] skipped intro: %s", name);
+    return true;
+}
+#else
+inline bool android_skip_intro(const char*) { return false; }
+#endif
+
 void CGamePersistent::start_logo_intro()
 {
     const bool notLoadingLevel = xr_strlen(m_game_params.m_game_or_spawn) == 0 && g_pGameLevel == nullptr;
     if (!allow_intro())
+    {
+        m_intro_event = nullptr;
+        if (notLoadingLevel)
+            m_pMainMenu->Activate(true);
+        return;
+    }
+
+    if (android_skip_intro("intro_logo"))
     {
         m_intro_event = nullptr;
         if (notLoadingLevel)
@@ -419,6 +441,14 @@ void CGamePersistent::start_logo_intro()
 
 void CGamePersistent::update_logo_intro()
 {
+    if (android_skip_intro("intro_logo"))
+    {
+        if (m_intro)
+            xr_delete(m_intro);
+        m_pMainMenu->Activate(true);
+        return;
+    }
+
     xr_delete(m_intro);
     m_pMainMenu->Activate(true);
 }
@@ -426,6 +456,14 @@ void CGamePersistent::update_logo_intro()
 extern int g_keypress_on_start;
 void CGamePersistent::game_loaded()
 {
+    if (android_skip_intro("game_loaded"))
+    {
+        m_intro_event = nullptr;
+        load_screen_renderer.Stop();
+        start_game_intro();
+        return;
+    }
+
     if (Device.dwPrecacheFrame <= 2)
     {
         m_intro_event = nullptr;
@@ -443,6 +481,15 @@ void CGamePersistent::game_loaded()
 
 void CGamePersistent::update_game_loaded()
 {
+    if (android_skip_intro("game_loaded"))
+    {
+        if (m_intro)
+            xr_delete(m_intro);
+        load_screen_renderer.Stop();
+        start_game_intro();
+        return;
+    }
+
     xr_delete(m_intro);
     load_screen_renderer.Stop();
     start_game_intro();
@@ -451,6 +498,11 @@ void CGamePersistent::update_game_loaded()
 void CGamePersistent::start_game_intro()
 {
     if (!allow_game_intro())
+    {
+        return;
+    }
+
+    if (android_skip_intro("intro_game"))
     {
         return;
     }
@@ -470,6 +522,13 @@ void CGamePersistent::start_game_intro()
 
 void CGamePersistent::update_game_intro()
 {
+    if (android_skip_intro("intro_game"))
+    {
+        if (m_intro)
+            xr_delete(m_intro);
+        return;
+    }
+
     xr_delete(m_intro);
 }
 
