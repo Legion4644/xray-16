@@ -103,8 +103,8 @@ void CTexture::apply_theora(CBackend& cmd_list, u32 dwStage)
     pTheora->DecompressFrame(frame.data(), 0, pos);
 
 #ifdef XR_PLATFORM_GLES
-    // TheoraSurface/desktop path commonly uses BGRA byte order.
-    // Android GLES upload below uses RGBA8, so swap channels on CPU.
+    // Desktop GL path uses GL_BGRA. Android GLES upload uses GL_RGBA,
+    // so convert BGRA byte order to RGBA correctly.
     for (size_t idx = 0; idx < frame.size(); ++idx)
     {
         const u32 px = frame[idx];
@@ -112,7 +112,10 @@ void CTexture::apply_theora(CBackend& cmd_list, u32 dwStage)
         const u32 g = (px >> 8) & 0x000000ffu;
         const u32 r = (px >> 16) & 0x000000ffu;
         const u32 a = (px >> 24) & 0x000000ffu;
-        frame[idx] = (a << 24) | (r << 16) | (g << 8) | b;
+
+        // Desired memory bytes for GL_RGBA: R, G, B, A.
+        // On little-endian, that is: A << 24 | B << 16 | G << 8 | R.
+        frame[idx] = (a << 24) | (b << 16) | (g << 8) | r;
     }
 
     const GLenum format = GL_RGBA;
@@ -125,7 +128,18 @@ void CTexture::apply_theora(CBackend& cmd_list, u32 dwStage)
         desc, 0, 0, 0,
         static_cast<GLsizei>(w), static_cast<GLsizei>(h),
         format, GL_UNSIGNED_BYTE, frame.data()));
+
+    static bool s_logged_first_frame = false;
+    if (!s_logged_first_frame && !frame.empty())
+    {
+        Msg("* GL: Theora first frame uploaded: %ux%u px=%08x",
+            static_cast<unsigned int>(w),
+            static_cast<unsigned int>(h),
+            static_cast<unsigned int>(frame[0]));
+        s_logged_first_frame = true;
+    }
 }
+
 ;
 
 void CTexture::apply_avi(CBackend& cmd_list, u32 dwStage) const
@@ -254,6 +268,27 @@ void CTexture::Load()
         pSurface = pTexture;
         desc = GL_TEXTURE_2D;
         size_set(_w, _h);
+
+        // Initialize video texture to opaque black to avoid uninitialized green/garbage frames.
+        if (_w && _h)
+        {
+            static xr_vector<u32> black;
+            black.assign(static_cast<size_t>(_w) * static_cast<size_t>(_h), 0xFF000000u);
+
+            glBindTexture(GL_TEXTURE_2D, pTexture);
+
+#ifdef XR_PLATFORM_GLES
+            CHK_GL(glTexSubImage2D(
+                GL_TEXTURE_2D, 0, 0, 0,
+                static_cast<GLsizei>(_w), static_cast<GLsizei>(_h),
+                GL_RGBA, GL_UNSIGNED_BYTE, black.data()));
+#else
+            CHK_GL(glTexSubImage2D(
+                GL_TEXTURE_2D, 0, 0, 0,
+                static_cast<GLsizei>(_w), static_cast<GLsizei>(_h),
+                GL_BGRA, GL_UNSIGNED_BYTE, black.data()));
+#endif
+        }
 
         const GLenum err = glGetError();
         if (err != GL_NO_ERROR)

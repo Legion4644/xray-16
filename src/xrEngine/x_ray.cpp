@@ -304,10 +304,19 @@ CApplication::CApplication(pcstr commandLine, GameModule* game, const std::array
     }
     if (g_pGamePersistent)
         g_pGamePersistent->OnAppStart();
-    else if (!strstr(Core.Params, "-no_console"))
-        Console->Show();
-    else
-        Msg("[GLES-STUB] Console->Show() suppressed by -no_console");
+
+#ifdef XR_PLATFORM_GLES
+    if (strstr(Core.Params, "-no_console") && Console)
+        Console->Hide();
+#endif
+
+    if (!g_pGamePersistent)
+    {
+        if (!strstr(Core.Params, "-no_console"))
+            Console->Show();
+        else
+            Msg("[GLES-STUB] Console->Show() suppressed by -no_console");
+    }
 
     FrameMarkEnd(FRAME_MARK_APPLICATION_STARTUP);
 }
