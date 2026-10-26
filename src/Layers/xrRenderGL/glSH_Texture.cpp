@@ -200,7 +200,6 @@ void CTexture::apply_theora(CBackend& cmd_list, u32 dwStage)
             {
                 glReadPixels(w / 2, h / 2, 1, 1, format, GL_UNSIGNED_BYTE, readback);
             }
-            const u32 gpu_px = (readback[3] << 24) | (readback[2] << 16) | (readback[1] << 8) | readback[0];
 
             glBindFramebuffer(GL_READ_FRAMEBUFFER, prev_read_fbo);
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, prev_draw_fbo);
@@ -208,7 +207,17 @@ void CTexture::apply_theora(CBackend& cmd_list, u32 dwStage)
             glActiveTexture(static_cast<GLenum>(prev_active_texture));
             glDeleteFramebuffers(1, &fbo);
 
-            Msg("[VIDEODIAG]   GPU readback center: R=%u G=%u B=%u A=%u (packed=%08x) vs CPU center=%08x",
+            // Pack readback to match CPU format (ARGB in memory = 0xAARRGGBB)
+            // Android: format=GL_RGBA, readback bytes = R,G,B,A -> pack as A<<24 | R<<16 | G<<8 | B
+            // Desktop: format=GL_BGRA, readback bytes = B,G,R,A -> pack as A<<24 | R<<16 | G<<8 | B
+            u32 gpu_px;
+#if defined(__ANDROID__)
+            gpu_px = (readback[3] << 24) | (readback[0] << 16) | (readback[1] << 8) | readback[2];
+#else
+            gpu_px = (readback[3] << 24) | (readback[2] << 16) | (readback[1] << 8) | readback[0];
+#endif
+
+            Msg("[VIDEODIAG]   GPU readback center: raw_bytes=%02x%02x%02x%02x, packed_cpu_fmt=%08x vs CPU center=%08x",
                 readback[0], readback[1], readback[2], readback[3], gpu_px, cpu_center_px);
         }
     }
