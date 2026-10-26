@@ -246,9 +246,43 @@ bool CTheoraStream::Load(const char* fname)
     source = FS.rs_open(0, fname);
     VERIFY(source);
 
+    const bool video_diag = strstr(Core.Params, "-video_diag") != nullptr;
+
     // parse headers
+    if (video_diag)
+    {
+        const size_t tell_before_parse = source->tell();
+        const size_t elapsed_before_parse = source->elapsed();
+        Msg("[VIDEODIAG] TheoraStream::Load: before ParseHeaders: tell=%zu, elapsed=%zu", tell_before_parse, elapsed_before_parse);
+    }
+
     bool res = ParseHeaders();
+
+    if (video_diag)
+    {
+        const size_t tell_after_parse = source->tell();
+        const size_t elapsed_after_parse = source->elapsed();
+        const u32 frame_count = static_cast<u32>(tm_total * fpms);
+        Msg("[VIDEODIAG] TheoraStream::Load: after ParseHeaders: tell=%zu, elapsed=%zu, frame_count=%u, tm_total=%u, fpms=%.6f",
+            tell_after_parse, elapsed_after_parse, frame_count, tm_total, fpms);
+    }
+
     // seek to start
+    if (video_diag)
+    {
+        const size_t tell_before_reset = source->tell();
+        const size_t elapsed_before_reset = source->elapsed();
+        Msg("[VIDEODIAG] TheoraStream::Load: before Reset(): tell=%zu, elapsed=%zu", tell_before_reset, elapsed_before_reset);
+    }
+
     Reset();
+
+    if (video_diag)
+    {
+        const size_t tell_after_reset = source->tell();
+        const size_t elapsed_after_reset = source->elapsed();
+        Msg("[VIDEODIAG] TheoraStream::Load: after Reset(): tell=%zu, elapsed=%zu", tell_after_reset, elapsed_after_reset);
+    }
+
     return res;
 }
