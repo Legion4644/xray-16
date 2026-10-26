@@ -102,32 +102,123 @@ void CTexture::apply_theora(CBackend& cmd_list, u32 dwStage)
     int pos = 0;
     pTheora->DecompressFrame(frame.data(), 0, pos);
 
-#ifdef XR_PLATFORM_GLES
-    // Desktop GL path uses GL_BGRA. Android GLES upload uses GL_RGBA,
-    // so convert BGRA byte order to RGBA correctly.
+    const bool video_diag = strstr(Core.Params, "-video_diag") != nullptr;
+
+#if defined(__ANDROID__)
+    // Android GLES upload uses GL_RGBA. CPU path produces BGRA (color_rgba = ARGB in memory = BGRA bytes).
+    // Convert BGRA to RGBA with exactly one R<->B swap.
     for (size_t idx = 0; idx < frame.size(); ++idx)
     {
-        const u32 px = frame[idx];
-        const u32 b = px & 0x000000ffu;
-        const u32 g = (px >> 8) & 0x000000ffu;
-        const u32 r = (px >> 16) & 0x000000ffu;
-        const u32 a = (px >> 24) & 0x000000ffu;
-
-        // Desired memory bytes for GL_RGBA: R, G, B, A.
-        // On little-endian, that is: A << 24 | B << 16 | G << 8 | R.
-        frame[idx] = (a << 24) | (b << 16) | (g << 8) | r;
+        u32 px = frame[idx];
+        px = (px & 0xff00ff00u) | ((px & 0x00ff0000u) >> 16) | ((px & 0x000000ffu) << 16);
+        frame[idx] = px;
     }
-
     const GLenum format = GL_RGBA;
 #else
+    // Desktop GL uses GL_BGRA, matches CPU BGRA byte order.
     const GLenum format = GL_BGRA;
 #endif
 
     glBindTexture(desc, pSurface);
-    CHK_GL(glTexSubImage2D(
-        desc, 0, 0, 0,
-        static_cast<GLsizei>(w), static_cast<GLsizei>(h),
-        format, GL_UNSIGNED_BYTE, frame.data()));
+
+    static u32 s_upload_count = 0;
+    ++s_upload_count;
+
+    if (video_diag && (s_upload_count <= 5 || s_upload_count % 30 == 0))
+    {
+        while (glGetError() != GL_NO_ERROR) {}
+
+        const GLenum err_before = glGetError();
+
+        CHK_GL(glTexSubImage2D(
+            desc, 0, 0, 0,
+            static_cast<GLsizei>(w), static_cast<GLsizei>(h),
+            format, GL_UNSIGNED_BYTE, frame.data()));
+
+        const GLenum err_after = glGetError();
+
+        const u32 tm_play = m_play_time != 0xFFFFFFFF ? m_play_time : Device.dwTimeContinual;
+        const u32 d_frame = pTheora->m_rgb ? pTheora->m_rgb->d_frame : 0;
+        const i64 granulepos = pTheora->m_rgb ? pTheora->m_rgb->t_state.granulepos : -1;
+
+        Msg("[VIDEODIAG] Theora upload #%u: tm_play=%u, d_frame=%u, granulepos=%lld, glErr_before=0x%x, glErr_after=0x%x",
+            s_upload_count, tm_play, d_frame, granulepos, err_before, err_after);
+
+        if (!frame.empty())
+        {
+            const size_t center_idx = (static_cast<size_t>(h) / 2) * static_cast<size_t>(w) + (static_cast<size_t>(w) / 2);
+            const u32 cpu_center_px = (center_idx < frame.size()) ? frame[center_idx] : 0;
+            const u32 cpu_px0 = frame[0];
+            const u32 cpu_px1 = (frame.size() > 1) ? frame[1] : 0;
+            const u32 cpu_px2 = (frame.size() > 2) ? frame[2] : 0;
+            const u32 cpu_px3 = (frame.size() > 3) ? frame[3] : 0;
+
+            yuv_buffer* yuv = pTheora->m_rgb ? pTheora->m_rgb->CurrentFrame() : nullptr;
+            if (yuv)
+            {
+                u64 sumY = 0;
+                u32 countY = 0;
+                const u32 strideY = yuv->y_stride;
+                for (u32 yy = 0; yy < h; yy += 8)
+                {
+                    const u8* row = yuv->y + strideY * yy;
+                    for (u32 xx = 0; xx < w; xx += 8)
+                    {
+                        sumY += row[xx];
+                        ++countY;
+                    }
+                }
+                const u32 avgY = countY ? static_cast<u32>(sumY / countY) : 0;
+                const ptrdiff_t y_stride = yuv->y_stride;
+                const ptrdiff_t uv_stride = yuv->uv_stride;
+                const u8* y_ptr = yuv->y;
+                const u8* u_ptr = yuv->u;
+                const u8* v_ptr = yuv->v;
+                Msg("[VIDEODIAG]   CPU: avgY=%u (black=16, zero=0), y_stride=%td, uv_stride=%td, y_ptr=%p, u_ptr=%p, v_ptr=%p, px0=%08x px1=%08x px2=%08x px3=%08x, center=%08x",
+                    avgY, y_stride, uv_stride, y_ptr, u_ptr, v_ptr, cpu_px0, cpu_px1, cpu_px2, cpu_px3, cpu_center_px);
+            }
+            else
+            {
+                Msg("[VIDEODIAG]   CPU: px0=%08x px1=%08x px2=%08x px3=%08x, center=%08x",
+                    cpu_px0, cpu_px1, cpu_px2, cpu_px3, cpu_center_px);
+            }
+
+            GLuint prev_draw_fbo = 0, prev_read_fbo = 0, prev_tex = 0;
+            glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, reinterpret_cast<GLint*>(&prev_draw_fbo));
+            glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, reinterpret_cast<GLint*>(&prev_read_fbo));
+            glGetIntegerv(GL_TEXTURE_BINDING_2D, reinterpret_cast<GLint*>(&prev_tex));
+            GLint prev_active_texture = 0;
+            glGetIntegerv(GL_ACTIVE_TEXTURE, &prev_active_texture);
+
+            GLuint fbo = 0;
+            glGenFramebuffers(1, &fbo);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+            glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, desc, pSurface, 0);
+
+            u8 readback[4] = {0};
+            if (glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE)
+            {
+                glReadPixels(w / 2, h / 2, 1, 1, format, GL_UNSIGNED_BYTE, readback);
+            }
+            const u32 gpu_px = (readback[3] << 24) | (readback[2] << 16) | (readback[1] << 8) | readback[0];
+
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, prev_read_fbo);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, prev_draw_fbo);
+            glBindTexture(GL_TEXTURE_2D, prev_tex);
+            glActiveTexture(static_cast<GLenum>(prev_active_texture));
+            glDeleteFramebuffers(1, &fbo);
+
+            Msg("[VIDEODIAG]   GPU readback center: R=%u G=%u B=%u A=%u (packed=%08x) vs CPU center=%08x",
+                readback[0], readback[1], readback[2], readback[3], gpu_px, cpu_center_px);
+        }
+    }
+    else
+    {
+        CHK_GL(glTexSubImage2D(
+            desc, 0, 0, 0,
+            static_cast<GLsizei>(w), static_cast<GLsizei>(h),
+            format, GL_UNSIGNED_BYTE, frame.data()));
+    }
 
     static bool s_logged_first_frame = false;
     if (!s_logged_first_frame && !frame.empty())
