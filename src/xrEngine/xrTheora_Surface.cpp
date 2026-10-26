@@ -192,12 +192,31 @@ void CTheoraSurface::DecompressFrame(u32* data, u32 _width, int& _pos)
     u32 width = Width(true);
     u32 height = Height(true);
 
-#ifdef XR_PLATFORM_GLES
+#if defined(__ANDROID__)
     // GLES UI shader does NOT convert YUV->RGB, so we must always take the CPU path.
     const bool kGlesForceCpuYuv2Rgb = true;
 #else
     const bool kGlesForceCpuYuv2Rgb = false;
 #endif
+
+    static bool s_logged_platform_info = false;
+    if (!s_logged_platform_info)
+    {
+        Msg("[VIDEODIAG] TheoraSurface: bShaderYUV2RGB=%d, kGlesForceCpuYuv2Rgb=%d, __ANDROID__=1, XR_PLATFORM_GLES=%d, XR_PLATFORM_ANDROID=%d",
+            bShaderYUV2RGB, kGlesForceCpuYuv2Rgb,
+#ifdef XR_PLATFORM_GLES
+            1
+#else
+            0
+#endif
+#ifdef XR_PLATFORM_ANDROID
+            , 1
+#else
+            , 0
+#endif
+        );
+        s_logged_platform_info = true;
+    }
 
     static const float K = 0.256788f + 0.504129f + 0.097906f;
 
