@@ -6,6 +6,8 @@
 #include <SDL.h>
 #endif
 
+#include "xrCore/xr_types.h"
+
 // refs
 class CTheoraStream;
 
