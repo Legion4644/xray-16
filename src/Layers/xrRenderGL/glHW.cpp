@@ -316,164 +316,41 @@ void CHW::EndScene() { }
 
 void CHW::Present()
 {
-    static int s_presentFrame = 0;
-    const int frame = s_presentFrame;
-    const bool logFrame = (frame < 30) || ((frame % 300) == 0);
+    int drawableW = 0;
+    int drawableH = 0;
+    SDL_GL_GetDrawableSize(m_window, &drawableW, &drawableH);
 
-    auto drainGlError = [](const char* tag, int limit)
+    if (drawableW <= 0 || drawableH <= 0)
     {
-        GLenum e;
-        int n = 0;
-        while ((e = glGetError()) != GL_NO_ERROR && n < limit)
-        {
-            Msg("[GLES-PRESENT] %s error 0x%x", tag, static_cast<unsigned int>(e));
-            ++n;
-        }
-    };
-
-    drainGlError("stale", 8);
+        drawableW = static_cast<int>(Device.dwWidth);
+        drawableH = static_cast<int>(Device.dwHeight);
+    }
 
     GLint oldViewport[4] = { 0, 0, 0, 0 };
     glGetIntegerv(GL_VIEWPORT, oldViewport);
     const GLboolean oldScissor = glIsEnabled(GL_SCISSOR_TEST);
 
-    // Frame 10: green probe through pFB -> default framebuffer.
-    if (frame == 10)
-    {
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, pFB);
-        const GLenum fbStatus = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
-
-        GLint colorObj = 0;
-        GLint depthObj = 0;
-        glGetFramebufferAttachmentParameteriv(
-            GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-            GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &colorObj);
-        glGetFramebufferAttachmentParameteriv(
-            GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-            GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &depthObj);
-
-        glViewport(0, 0, static_cast<GLsizei>(Device.dwWidth), static_cast<GLsizei>(Device.dwHeight));
-        glDisable(GL_SCISSOR_TEST);
-
-        glClearColor(0.0f, 1.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        drainGlError("green-clear-pFB", 4);
-
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, pFB);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-
-        glBlitFramebuffer(
-            0, 0, static_cast<GLsizei>(Device.dwWidth), static_cast<GLsizei>(Device.dwHeight),
-            0, 0, static_cast<GLsizei>(Device.dwWidth), static_cast<GLsizei>(Device.dwHeight),
-            GL_COLOR_BUFFER_BIT, GL_NEAREST);
-
-        drainGlError("green-blit", 4);
-
-        SDL_GL_SwapWindow(m_window);
-
-        Msg("[GLES-PRESENT] GREEN pFB probe frame=%d pFB=%u status=0x%x colorObj=%d depthObj=%d Device=%ux%u",
-            frame,
-            static_cast<unsigned int>(pFB),
-            static_cast<unsigned int>(fbStatus),
-            colorObj,
-            depthObj,
-            static_cast<unsigned int>(Device.dwWidth),
-            static_cast<unsigned int>(Device.dwHeight));
-
-        glViewport(oldViewport[0], oldViewport[1], oldViewport[2], oldViewport[3]);
-        if (oldScissor)
-            glEnable(GL_SCISSOR_TEST);
-
-        ++s_presentFrame;
-        return;
-    }
-
-    // Frame 11: red probe directly on default framebuffer.
-    if (frame == 11)
-    {
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-        glViewport(0, 0, static_cast<GLsizei>(Device.dwWidth), static_cast<GLsizei>(Device.dwHeight));
-        glDisable(GL_SCISSOR_TEST);
-
-        glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        drainGlError("red-clear-default", 4);
-
-        SDL_GL_SwapWindow(m_window);
-
-        Msg("[GLES-PRESENT] RED default probe frame=%d Device=%ux%u",
-            frame,
-            static_cast<unsigned int>(Device.dwWidth),
-            static_cast<unsigned int>(Device.dwHeight));
-
-        glViewport(oldViewport[0], oldViewport[1], oldViewport[2], oldViewport[3]);
-        if (oldScissor)
-            glEnable(GL_SCISSOR_TEST);
-
-        ++s_presentFrame;
-        return;
-    }
-
-    if (logFrame)
-    {
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, pFB);
-        const GLenum fbStatus = glCheckFramebufferStatus(GL_READ_FRAMEBUFFER);
-
-        GLint colorObj = 0;
-        GLint depthObj = 0;
-        GLint stencilObj = 0;
-
-        glGetFramebufferAttachmentParameteriv(
-            GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-            GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &colorObj);
-        glGetFramebufferAttachmentParameteriv(
-            GL_READ_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-            GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &depthObj);
-        glGetFramebufferAttachmentParameteriv(
-            GL_READ_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
-            GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &stencilObj);
-
-        GLint viewport[4] = { 0, 0, 0, 0 };
-        glGetIntegerv(GL_VIEWPORT, viewport);
-
-        unsigned char px[4] = { 0, 0, 0, 0 };
-        const GLint x = static_cast<GLint>(Device.dwWidth / 2);
-        const GLint y = static_cast<GLint>(Device.dwHeight / 2);
-
-        glReadPixels(x, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
-        drainGlError("readpixel", 4);
-
-        Msg("[GLES-PRESENT] frame=%d pFB=%u status=0x%x complete=%d colorObj=%d depthObj=%d stencilObj=%d Device=%ux%u viewport=%d,%d %dx%d px=%d,%d,%d,%d",
-            frame,
-            static_cast<unsigned int>(pFB),
-            static_cast<unsigned int>(fbStatus),
-            (fbStatus == GL_FRAMEBUFFER_COMPLETE) ? 1 : 0,
-            colorObj,
-            depthObj,
-            stencilObj,
-            static_cast<unsigned int>(Device.dwWidth),
-            static_cast<unsigned int>(Device.dwHeight),
-            viewport[0], viewport[1], viewport[2], viewport[3],
-            static_cast<int>(px[0]),
-            static_cast<int>(px[1]),
-            static_cast<int>(px[2]),
-            static_cast<int>(px[3]));
-    }
-
     glBindFramebuffer(GL_READ_FRAMEBUFFER, pFB);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 
+    glViewport(0, 0, static_cast<GLsizei>(drawableW), static_cast<GLsizei>(drawableH));
+    glDisable(GL_SCISSOR_TEST);
+
     glBlitFramebuffer(
         0, 0, static_cast<GLsizei>(Device.dwWidth), static_cast<GLsizei>(Device.dwHeight),
-        0, 0, static_cast<GLsizei>(Device.dwWidth), static_cast<GLsizei>(Device.dwHeight),
+        0, 0, static_cast<GLsizei>(drawableW), static_cast<GLsizei>(drawableH),
         GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
-    if (logFrame)
-        drainGlError("post-blit", 4);
-
+#ifndef XR_PLATFORM_WEB
     SDL_GL_SwapWindow(m_window);
+#endif
 
-    ++s_presentFrame;
+    glViewport(oldViewport[0], oldViewport[1], oldViewport[2], oldViewport[3]);
+
+    if (oldScissor)
+        glEnable(GL_SCISSOR_TEST);
+    else
+        glDisable(GL_SCISSOR_TEST);
 
     if (BackBufferCount == 0)
         BackBufferCount = 1;
