@@ -324,6 +324,7 @@ CApplication::CApplication(pcstr commandLine, GameModule* game, const std::array
     }
 
     FrameMarkEnd(FRAME_MARK_APPLICATION_STARTUP);
+    log_memory_phase("boot");
 }
 
 CApplication::~CApplication()

@@ -162,3 +162,4 @@ XRCORE_API void* xr_realloc(void* ptr, size_t size);
 XRCORE_API pstr xr_strdup(pcstr string);
 
 XRCORE_API void log_vminfo();
+XRCORE_API void log_memory_phase(pcstr phase);

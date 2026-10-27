@@ -212,6 +212,7 @@ void CMainMenu::Activate(bool bActivate)
         Device.seqRender.Add(this, 4); // 1-console 2-cursor 3-tutorial
 
         Console->Execute("stat_memory");
+        log_memory_phase("menu_active");
     }
     else
     {

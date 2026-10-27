@@ -70,6 +70,7 @@ void CHOM::Load()
         return;
     }
     Msg("* Loading HOM: %s", fName);
+    log_memory_phase("loading_hom");
 
     IReader* fs = FS.r_open(fName);
 

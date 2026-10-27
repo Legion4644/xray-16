@@ -149,6 +149,38 @@ XRCORE_API void log_vminfo()
     Msg("* [ %s ]: free[%zu K], reserved[%zu K], committed[%zu K]", SDL_GetPlatform(), w_free / 1024, w_reserved / 1024, w_committed / 1024);
 }
 
+XRCORE_API void log_memory_phase(pcstr phase)
+{
+    // Read VmRSS and VmSize from /proc/self/status
+    size_t vm_rss = 0;
+    size_t vm_size = 0;
+    
+    FILE* f = fopen("/proc/self/status", "r");
+    if (f)
+    {
+        char line[256];
+        while (fgets(line, sizeof(line), f))
+        {
+            if (strncmp(line, "VmRSS:", 6) == 0)
+            {
+                sscanf(line + 6, "%zu", &vm_rss);
+            }
+            else if (strncmp(line, "VmSize:", 7) == 0)
+            {
+                sscanf(line + 7, "%zu", &vm_size);
+            }
+        }
+        fclose(f);
+    }
+
+    // Get free/committed memory
+    size_t w_free, w_reserved, w_committed;
+    vminfo(&w_free, &w_reserved, &w_committed);
+
+    Msg("* [MEM:%s] VmRSS[%zu KB] VmSize[%zu KB] free[%zu KB] committed[%zu KB]", 
+        phase, vm_rss, vm_size, w_free / 1024, w_committed / 1024);
+}
+
 size_t xrMemory::mem_usage()
 {
 #if defined(XR_PLATFORM_WINDOWS)

@@ -243,6 +243,7 @@ void CALifeUpdateManager::new_game(LPCSTR save_name)
 #endif // #ifdef DEBUG
 
     Msg("* New game is successfully created!");
+    log_memory_phase("new_game_created");
 }
 
 void CALifeUpdateManager::load(LPCSTR game_name, bool no_assert, bool new_only)

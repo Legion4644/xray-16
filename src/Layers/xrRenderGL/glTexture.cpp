@@ -4,6 +4,9 @@
 
 #include "stdafx.h"
 
+#include <array>
+#include <string>
+
 #include <gli/gli.hpp>
 
 namespace xray::render::RENDER_NAMESPACE
@@ -63,6 +66,13 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     ret_msize = 0;
     R_ASSERT1_CURE(fRName && fRName[0], { return 0; });
 
+    static int s_texture_load_count = 0;
+    ++s_texture_load_count;
+    if (s_texture_load_count % 50 == 0)
+    {
+        log_memory_phase("texture_50");
+    }
+
     GLuint pTexture = 0;
     string_path fn;
     {
@@ -118,18 +128,66 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
         if (texture.target() == gli::TARGET_2D)
         {
             gli::texture2d src(texture);
-            gli::texture2d dst = gli::convert(src, gli::FORMAT_RGBA8_UNORM_PACK8);
-            if (!dst.empty())
-                converted = dst;
+            
+            // Android: safe cutoff for large textures - only load mips that reduce to <= 1024
+            #if defined(XR_PLATFORM_ANDROID)
+            gli::extent3d ext = src.extent();
+            int lod = 0;
+            while (lod < static_cast<int>(src.levels()) - 1 && (ext.x > 1024 || ext.y > 1024))
+            {
+                ++lod;
+                ext = src.extent(lod);
+            }
+            if (lod > 0)
+            {
+                gli::texture2d src_lod(src, gli::TARGET_2D, 0, src.layers() - 1, 0, src.faces() - 1, lod, src.levels() - 1);
+                gli::texture2d dst = gli::convert(src_lod, gli::FORMAT_RGBA8_UNORM_PACK8);
+                if (!dst.empty())
+                    converted = dst;
+            }
+            else
+            #endif
+            {
+                gli::texture2d dst = gli::convert(src, gli::FORMAT_RGBA8_UNORM_PACK8);
+                if (!dst.empty())
+                    converted = dst;
+            }
         }
         if (!converted.empty())
         {
+            // Track top 10 DXT->RGBA8 allocations
+            static std::array<std::pair<std::string, size_t>, 10> s_top_dxt_allocations{};
+            size_t alloc_size = converted.size();
+            std::string name(fn);
+            for (auto& entry : s_top_dxt_allocations)
+            {
+                if (alloc_size > entry.second)
+                {
+                    entry = {name, alloc_size};
+                    break;
+                }
+            }
+            
             static bool s_logged_dxt_fallback = false;
             if (!s_logged_dxt_fallback)
             {
                 Msg("! GLES: converting compressed texture to RGBA8: %s", fn);
                 s_logged_dxt_fallback = true;
             }
+            
+            // Log top 10 periodically
+            static int s_dxt_log_counter = 0;
+            if (++s_dxt_log_counter % 50 == 0)
+            {
+                Msg("* [GLES-TOP10-DXT] Top 10 DXT->RGBA8 allocations:");
+                int rank = 1;
+                for (const auto& entry : s_top_dxt_allocations)
+                {
+                    if (entry.second > 0)
+                        Msg("  %d. %s - %zu KB", rank++, entry.first.c_str(), entry.second / 1024);
+                }
+            }
+            
             texture = std::move(converted);
         }
         else

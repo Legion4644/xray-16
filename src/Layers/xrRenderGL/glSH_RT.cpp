@@ -1,6 +1,9 @@
 #include "stdafx.h"
 #pragma hdrstop
 
+#include <array>
+#include <string>
+
 #include "../xrRender/ResourceManager.h"
 #include "glTextureUtils.h"
 
@@ -58,6 +61,36 @@ void CRT::create(LPCSTR Name, u32 w, u32 h, D3DFORMAT f, u32 SampleCount /*= 1*/
         h, GL_FALSE));
     else
         CHK_GL(glTexStorage2D(GL_TEXTURE_2D, 1, glTextureUtils::ConvertTextureFormat(fmt), w, h));
+
+    // Track top 10 render target allocations (GLES only)
+#if defined(XR_PLATFORM_GLES)
+    {
+        static std::array<std::pair<std::string, size_t>, 10> s_top_rt_allocations{};
+        // Estimate size: w * h * 4 bytes (RGBA8) * sample count
+        size_t rt_size = static_cast<size_t>(w) * h * 4 * std::max<u32>(1, SampleCount);
+        std::string name(Name);
+        for (auto& entry : s_top_rt_allocations)
+        {
+            if (rt_size > entry.second)
+            {
+                entry = {name, rt_size};
+                break;
+            }
+        }
+        
+        static int s_rt_log_counter = 0;
+        if (++s_rt_log_counter % 20 == 0)
+        {
+            Msg("* [GLES-TOP10-RT] Top 10 render target allocations:");
+            int rank = 1;
+            for (const auto& entry : s_top_rt_allocations)
+            {
+                if (entry.second > 0)
+                    Msg("  %d. %s - %zu KB", rank++, entry.first.c_str(), entry.second / 1024);
+            }
+        }
+    }
+#endif
 
     pTexture = RImplementation.Resources->_CreateTexture(Name);
     pTexture->surface_set(target, pRT);
