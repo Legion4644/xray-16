@@ -6,6 +6,7 @@
 
 #include <array>
 #include <string>
+#include <cstring>
 
 #include <gli/gli.hpp>
 
@@ -131,16 +132,18 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
             
             // Android: safe cutoff for large textures - only load mips that reduce to <= 1024
             #if defined(XR_PLATFORM_ANDROID)
-            gli::extent3d ext = src.extent();
+            auto ext2 = src.extent();
             int lod = 0;
-            while (lod < static_cast<int>(src.levels()) - 1 && (ext.x > 1024 || ext.y > 1024))
+            while (lod < static_cast<int>(src.levels()) - 1 && (ext2.x > 1024 || ext2.y > 1024))
             {
                 ++lod;
-                ext = src.extent(lod);
+                ext2 = src.extent(lod);
             }
             if (lod > 0)
             {
-                gli::texture2d src_lod(src, gli::TARGET_2D, 0, src.layers() - 1, 0, src.faces() - 1, lod, src.levels() - 1);
+                // Create a new texture2d with only the target mip level
+                gli::texture2d src_lod(src.format(), ext2, 1);
+                std::memcpy(src_lod.data(), src.data(0, 0, lod), src.size(lod));
                 gli::texture2d dst = gli::convert(src_lod, gli::FORMAT_RGBA8_UNORM_PACK8);
                 if (!dst.empty())
                     converted = dst;
