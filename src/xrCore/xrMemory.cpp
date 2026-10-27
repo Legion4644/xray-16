@@ -91,6 +91,16 @@
     #error Please, define explicitly which allocator you want to use
 #endif
 
+namespace
+{
+    std::atomic<size_t> g_mem_counters[xrMemory::MEMCAT_COUNT]{};
+    std::atomic<size_t> g_mem_boot_baseline[xrMemory::MEMCAT_COUNT]{};
+    bool g_boot_snapshotted = false;
+    std::string g_uninstr_list;
+    std::atomic<long long> g_alloc_bytes{0};
+    std::atomic<bool> g_ui_hook_fired{false};
+}
+
 xrMemory Memory;
 // Also used in src\xrCore\xrDebug.cpp to prevent use of g_pStringContainer before it initialized
 bool shared_str_initialized = false;
@@ -460,16 +470,6 @@ XRCORE_API void* xr_malloc(size_t size)
 XRCORE_API void* xr_realloc(void* ptr, size_t size)
 {
     return Memory.mem_realloc(ptr, size);
-}
-
-namespace
-{
-    std::atomic<size_t> g_mem_counters[xrMemory::MEMCAT_COUNT]{};
-    std::atomic<size_t> g_mem_boot_baseline[xrMemory::MEMCAT_COUNT]{};
-    bool g_boot_snapshotted = false;
-    std::string g_uninstr_list;
-    std::atomic<long long> g_alloc_bytes{0};
-    std::atomic<bool> g_ui_hook_fired{false};
 }
 
 void xrMemory::track_mem(MemCategory cat, size_t delta_kb)
