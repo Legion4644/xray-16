@@ -4,13 +4,15 @@
 
 #if defined(XR_PLATFORM_WINDOWS)
 #include <Psapi.h>
-#elif defined(XR_PLATFORM_LINUX)
+#elif defined(XR_PLATFORM_LINUX) || defined(XR_PLATFORM_ANDROID)
 #include <sys/sysinfo.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <malloc.h>
 #elif defined(XR_PLATFORM_BSD)
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <malloc.h>
 #elif defined(XR_PLATFORM_HAIKU)
 #include <OS.h>
 #include <sys/time.h>
@@ -234,69 +236,125 @@ void xrMemory::mem_compact()
 void* xrMemory::mem_alloc(size_t size)
 {
     const auto result = xr_internal_malloc(size);
-    //TracyAlloc(result, size);
+    if (result)
+        g_alloc_bytes.fetch_add(static_cast<long long>(size / 1024), std::memory_order_relaxed);
     return result;
 }
 
 void* xrMemory::mem_alloc(size_t size, size_t alignment)
 {
     const auto result = xr_internal_malloc_aligned(size, alignment);
-    //TracyAlloc(result, size);
+    if (result)
+        g_alloc_bytes.fetch_add(static_cast<long long>(size / 1024), std::memory_order_relaxed);
     return result;
 }
 
 void* xrMemory::mem_alloc(size_t size, const std::nothrow_t&) noexcept
 {
     const auto result = xr_internal_malloc_nothrow(size);
-    //TracyAlloc(result, size);
+    if (result)
+        g_alloc_bytes.fetch_add(static_cast<long long>(size / 1024), std::memory_order_relaxed);
     return result;
 }
 
 void* xrMemory::mem_alloc(size_t size, size_t alignment, const std::nothrow_t&) noexcept
 {
     const auto result = xr_internal_malloc_nothrow_aligned(size, alignment);
-    //TracyAlloc(result, size);
+    if (result)
+        g_alloc_bytes.fetch_add(static_cast<long long>(size / 1024), std::memory_order_relaxed);
     return result;
 }
 
 void* xrMemory::small_alloc(size_t size) noexcept
 {
     const auto result = xr_internal_small_alloc(size);
-    //TracyAllocN(result, size, "small alloc");
+    if (result)
+        g_alloc_bytes.fetch_add(static_cast<long long>(size / 1024), std::memory_order_relaxed);
     return result;
 }
 
 void xrMemory::small_free(void* ptr) noexcept
 {
-    //TracyFree(ptr);
+    if (ptr)
+    {
+#if defined(USE_MIMALLOC)
+        size_t usable = mi_malloc_usable_size(ptr);
+        g_alloc_bytes.fetch_sub(static_cast<long long>(usable / 1024), std::memory_order_relaxed);
+#elif defined(XR_PLATFORM_LINUX) || defined(XR_PLATFORM_ANDROID) || defined(XR_PLATFORM_BSD)
+        size_t usable = malloc_usable_size(ptr);
+        g_alloc_bytes.fetch_sub(static_cast<long long>(usable / 1024), std::memory_order_relaxed);
+#endif
+    }
     xr_internal_small_free(ptr);
 }
 
 void* xrMemory::mem_realloc(void* ptr, size_t size)
 {
-    //TracyFree(ptr);
+    size_t old_size = 0;
+    if (ptr)
+    {
+#if defined(USE_MIMALLOC)
+        old_size = mi_malloc_usable_size(ptr);
+#elif defined(XR_PLATFORM_LINUX) || defined(XR_PLATFORM_ANDROID) || defined(XR_PLATFORM_BSD)
+        old_size = malloc_usable_size(ptr);
+#endif
+    }
     const auto result = xr_internal_realloc(ptr, size);
-    //TracyAllocN(result, size, "realloc");
+    if (result)
+    {
+        long long delta = static_cast<long long>(size / 1024) - static_cast<long long>(old_size / 1024);
+        g_alloc_bytes.fetch_add(delta, std::memory_order_relaxed);
+    }
     return result;
 }
 
 void* xrMemory::mem_realloc(void* ptr, size_t size, size_t alignment)
 {
-    //TracyFree(ptr);
+    size_t old_size = 0;
+    if (ptr)
+    {
+#if defined(USE_MIMALLOC)
+        old_size = mi_malloc_usable_size(ptr);
+#elif defined(XR_PLATFORM_LINUX) || defined(XR_PLATFORM_ANDROID) || defined(XR_PLATFORM_BSD)
+        old_size = malloc_usable_size(ptr);
+#endif
+    }
     const auto result = xr_internal_realloc_aligned(ptr, size, alignment);
-    //TracyAllocN(result, size, "realloc");
+    if (result)
+    {
+        long long delta = static_cast<long long>(size / 1024) - static_cast<long long>(old_size / 1024);
+        g_alloc_bytes.fetch_add(delta, std::memory_order_relaxed);
+    }
     return result;
 }
 
 void xrMemory::mem_free(void* ptr)
 {
-    //TracyFree(ptr);
+    if (ptr)
+    {
+#if defined(USE_MIMALLOC)
+        size_t usable = mi_malloc_usable_size(ptr);
+        g_alloc_bytes.fetch_sub(static_cast<long long>(usable / 1024), std::memory_order_relaxed);
+#elif defined(XR_PLATFORM_LINUX) || defined(XR_PLATFORM_ANDROID) || defined(XR_PLATFORM_BSD)
+        size_t usable = malloc_usable_size(ptr);
+        g_alloc_bytes.fetch_sub(static_cast<long long>(usable / 1024), std::memory_order_relaxed);
+#endif
+    }
     xr_internal_free(ptr);
 }
 
 void xrMemory::mem_free(void* ptr, size_t alignment)
 {
-    //TracyFree(ptr);
+    if (ptr)
+    {
+#if defined(USE_MIMALLOC)
+        size_t usable = mi_malloc_usable_size(ptr);
+        g_alloc_bytes.fetch_sub(static_cast<long long>(usable / 1024), std::memory_order_relaxed);
+#elif defined(XR_PLATFORM_LINUX) || defined(XR_PLATFORM_ANDROID) || defined(XR_PLATFORM_BSD)
+        size_t usable = malloc_usable_size(ptr);
+        g_alloc_bytes.fetch_sub(static_cast<long long>(usable / 1024), std::memory_order_relaxed);
+#endif
+    }
     xr_internal_free_aligned(ptr, alignment);
 }
 
@@ -410,6 +468,8 @@ namespace
     std::atomic<size_t> g_mem_boot_baseline[xrMemory::MEMCAT_COUNT]{};
     bool g_boot_snapshotted = false;
     std::string g_uninstr_list;
+    std::atomic<long long> g_alloc_bytes{0};
+    std::atomic<bool> g_ui_hook_fired{false};
 }
 
 void xrMemory::track_mem(MemCategory cat, size_t delta_kb)
@@ -423,7 +483,14 @@ void xrMemory::track_mem(MemCategory cat, size_t delta_kb)
 size_t xrMemory::get_mem(MemCategory cat) const
 {
     if (cat < MEMCAT_COUNT)
+    {
+        if (cat == MEMCAT_HEAP_LIVE)
+        {
+            long long val = g_alloc_bytes.load(std::memory_order_relaxed);
+            return (val > 0) ? static_cast<size_t>(val) : 0;
+        }
         return g_mem_counters[cat].load(std::memory_order_relaxed);
+    }
     return 0;
 }
 
@@ -431,7 +498,7 @@ size_t xrMemory::get_mem_delta(MemCategory cat) const
 {
     if (cat < MEMCAT_COUNT)
     {
-        size_t current = g_mem_counters[cat].load(std::memory_order_relaxed);
+        size_t current = get_mem(cat);
         size_t baseline = g_mem_boot_baseline[cat].load(std::memory_order_relaxed);
         return (current > baseline) ? (current - baseline) : 0;
     }
@@ -444,7 +511,15 @@ void xrMemory::snapshot_boot_baseline()
     {
         for (u32 i = 0; i < MEMCAT_COUNT; ++i)
         {
-            g_mem_boot_baseline[i].store(g_mem_counters[i].load(std::memory_order_relaxed), std::memory_order_relaxed);
+            if (i == MEMCAT_HEAP_LIVE)
+            {
+                long long val = g_alloc_bytes.load(std::memory_order_relaxed);
+                g_mem_boot_baseline[i].store((val > 0) ? static_cast<size_t>(val) : 0, std::memory_order_relaxed);
+            }
+            else
+            {
+                g_mem_boot_baseline[i].store(g_mem_counters[i].load(std::memory_order_relaxed), std::memory_order_relaxed);
+            }
         }
         g_boot_snapshotted = true;
     }
@@ -473,6 +548,8 @@ void xrMemory::log_memmap(pcstr phase)
         add_uninstr("video_memory_non_tex");
         add_uninstr("render_thread_stacks");
         add_uninstr("system_malloc_overhead");
+        add_uninstr("ui_texture_pool");
+        add_uninstr("ui_fonts");
         s_uninstr_init = true;
     }
 
@@ -492,38 +569,78 @@ void xrMemory::log_memmap(pcstr phase)
         fclose(f);
     }
 
-    size_t texGPU_abs = get_mem(MEMCAT_TEXGPU);
-    size_t texGPU_delta = get_mem_delta(MEMCAT_TEXGPU);
-    size_t alloc_abs = get_mem(MEMCAT_ALLOC);
-    size_t alloc_delta = get_mem_delta(MEMCAT_ALLOC);
-    size_t level_abs = get_mem(MEMCAT_LEVEL);
-    size_t level_delta = get_mem_delta(MEMCAT_LEVEL);
-    size_t shaders_abs = get_mem(MEMCAT_SHADERS);
-    size_t shaders_delta = get_mem_delta(MEMCAT_SHADERS);
-    size_t ui_abs = get_mem(MEMCAT_UI);
-    size_t ui_delta = get_mem_delta(MEMCAT_UI);
-    size_t script_abs = get_mem(MEMCAT_SCRIPT);
-    size_t script_delta = get_mem_delta(MEMCAT_SCRIPT);
-    size_t sound_abs = get_mem(MEMCAT_SOUND);
-    size_t sound_delta = get_mem_delta(MEMCAT_SOUND);
-    size_t phys_abs = get_mem(MEMCAT_PHYS);
-    size_t phys_delta = get_mem_delta(MEMCAT_PHYS);
+    // Primary categories for residual (mutually exclusive, live/resident)
+    size_t heap_live_abs = get_mem(MEMCAT_HEAP_LIVE);
+    size_t heap_live_delta = get_mem_delta(MEMCAT_HEAP_LIVE);
+    size_t gpu_tex_live_abs = get_mem(MEMCAT_GPU_TEX_LIVE);
+    size_t gpu_tex_live_delta = get_mem_delta(MEMCAT_GPU_TEX_LIVE);
+    size_t gpu_rt_live_abs = get_mem(MEMCAT_GPU_RT_LIVE);
+    size_t gpu_rt_live_delta = get_mem_delta(MEMCAT_GPU_RT_LIVE);
 
-    size_t sum_abs = texGPU_abs + alloc_abs + level_abs + shaders_abs + ui_abs + script_abs + sound_abs + phys_abs;
-    size_t residual = (vm_rss > sum_abs) ? (vm_rss - sum_abs) : 0;
+    // Informational categories (excluded from residual)
+    size_t level_info_abs = get_mem(MEMCAT_LEVEL_INFO);
+    size_t level_info_delta = get_mem_delta(MEMCAT_LEVEL_INFO);
+    size_t shaders_info_abs = get_mem(MEMCAT_SHADERS_INFO);
+    size_t shaders_info_delta = get_mem_delta(MEMCAT_SHADERS_INFO);
+    size_t ui_info_abs = get_mem(MEMCAT_UI_INFO);
+    size_t ui_info_delta = get_mem_delta(MEMCAT_UI_INFO);
+    size_t script_info_abs = get_mem(MEMCAT_SCRIPT_INFO);
+    size_t script_info_delta = get_mem_delta(MEMCAT_SCRIPT_INFO);
+    size_t sound_info_abs = get_mem(MEMCAT_SOUND_INFO);
+    size_t sound_info_delta = get_mem_delta(MEMCAT_SOUND_INFO);
+    size_t phys_info_abs = get_mem(MEMCAT_PHYS_INFO);
+    size_t phys_info_delta = get_mem_delta(MEMCAT_PHYS_INFO);
 
-    Msg("* [MEMMAP:%s] RSS=%zu texGPU=%zu/+%zu alloc=%zu/+%zu level=%zu/+%zu shaders=%zu/+%zu ui=%zu/+%zu script=%zu/+%zu sound=%zu/+%zu phys=%zu/+%zu uninstr=%s residual=%zu",
+    // Residual formula: only primary exclusive live categories
+    size_t sum_primary = heap_live_abs + gpu_tex_live_abs + gpu_rt_live_abs;
+    size_t residual = (vm_rss > sum_primary) ? (vm_rss - sum_primary) : 0;
+
+    // Main log line
+    Msg("* [MEMMAP:%s] RSS=%zu heap_live=%zu/+%zu gpu_tex_live=%zu/+%zu gpu_rt_live=%zu/+%zu residual=%zu "
+        "level_info=%zu/+%zu shaders_info=%zu/+%zu ui_info=%zu/+%zu script_info=%zu/+%zu sound_info=%zu/+%zu phys_info=%zu/+%zu "
+        "uninstr=%s",
         phase, vm_rss,
-        texGPU_abs, texGPU_delta,
-        alloc_abs, alloc_delta,
-        level_abs, level_delta,
-        shaders_abs, shaders_delta,
-        ui_abs, ui_delta,
-        script_abs, script_delta,
-        sound_abs, sound_delta,
-        phys_abs, phys_delta,
-        g_uninstr_list.empty() ? "none" : g_uninstr_list.c_str(),
-        residual);
+        heap_live_abs, heap_live_delta,
+        gpu_tex_live_abs, gpu_tex_live_delta,
+        gpu_rt_live_abs, gpu_rt_live_delta,
+        residual,
+        level_info_abs, level_info_delta,
+        shaders_info_abs, shaders_info_delta,
+        ui_info_abs, ui_info_delta,
+        script_info_abs, script_info_delta,
+        sound_info_abs, sound_info_delta,
+        phys_info_abs, phys_info_delta,
+        g_uninstr_list.empty() ? "none" : g_uninstr_list.c_str());
+
+    // Audit line - explains the formula and exclusions
+    if (xr_strcmp(phase, "boot") == 0 || xr_strcmp(phase, "t_report") == 0)
+    {
+        int heap_live_ok = (heap_live_abs > 0) ? 1 : 0;
+        int gpu_tex_live_ok = (gpu_tex_live_abs > 0) ? 1 : 0;
+        int gpu_rt_live_ok = (gpu_rt_live_abs > 0) ? 1 : 0;
+        Msg("* [MEMMAP-AUDIT] formula=heap_live+gpu_tex_live+gpu_rt_live; "
+            "heap_live=%d gpu_tex_live=%d gpu_rt_live=%d; "
+            "excluded_from_residual=level,shaders,ui,script,sound,phys; "
+            "overlap_known=level_heap,shaders_heap,ui_texgpu+heap,script_heap,sound_heap,phys_heap; "
+            "proxies_excluded=phys_hardcoded,script_static",
+            heap_live_ok, gpu_tex_live_ok, gpu_rt_live_ok);
+    }
+
+    // Sanity check at boot
+    if (xr_strcmp(phase, "boot") == 0)
+    {
+        int same_order = 0;
+        if (heap_live_abs > 0 && vm_rss > 0)
+        {
+            double ratio = static_cast<double>(heap_live_abs) / static_cast<double>(vm_rss);
+            same_order = (ratio >= 0.1 && ratio <= 10.0) ? 1 : 0;
+        }
+        int ui_instrumented = (ui_info_abs > 0) ? 1 : 0;
+        int ui_hook_fired = g_ui_hook_fired.load(std::memory_order_relaxed) ? 1 : 0;
+        int hom_instrumented = (level_info_abs > 0) ? 1 : 0;
+        Msg("* [MEMMAP-CHECK] rss_boot_kb=%zu heap_live_kb=%zu same_order=%d ui_instrumented=%d ui_hook_fired=%d hom_instrumented=%d",
+            vm_rss, heap_live_abs, same_order, ui_instrumented, ui_hook_fired, hom_instrumented);
+    }
 #else
     (void)phase;
 #endif

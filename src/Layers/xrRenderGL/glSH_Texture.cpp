@@ -2,6 +2,7 @@
 #pragma hdrstop
 
 #include "../xrRender/ResourceManager.h"
+#include "xrCore/xrMemory.h"
 
 #ifdef XR_PLATFORM_WINDOWS // TODO
 #include "xrEngine/tntQAVI.h"
@@ -499,6 +500,10 @@ void CTexture::Load()
             flags.MemoryUsage = mem;
         }
     }
+#ifdef __ANDROID__
+    if (flags.MemoryUsage > 0)
+        ::Memory.track_mem(xrMemory::MEMCAT_GPU_TEX_LIVE, flags.MemoryUsage / 1024);
+#endif
 
     PostLoad();
 }
@@ -514,6 +519,10 @@ void CTexture::Unload()
     //.	if (flags.bLoaded)		Msg		("* Unloaded: %s",cName.c_str());
 
     flags.bLoaded = FALSE;
+#ifdef __ANDROID__
+    if (flags.MemoryUsage > 0)
+        ::Memory.track_mem(xrMemory::MEMCAT_GPU_TEX_LIVE, -(long long)(flags.MemoryUsage / 1024));
+#endif
     if (!seqDATA.empty())
     {
         CHK_GL(glDeleteTextures(seqDATA.size(), seqDATA.data()));

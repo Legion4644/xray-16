@@ -776,7 +776,7 @@ T* CResourceManager::CreateShader(cpcstr name, pcstr filename /*= nullptr*/, u32
 
 #ifdef __ANDROID__
         if (size > 0)
-            ::Memory.track_mem(xrMemory::MEMCAT_SHADERS, size / 1024);
+            ::Memory.track_mem(xrMemory::MEMCAT_SHADERS_INFO, size / 1024);
 #endif
 
         return sh;

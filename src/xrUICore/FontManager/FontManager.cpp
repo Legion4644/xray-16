@@ -1,6 +1,9 @@
 #include "pch.hpp"
 #include "FontManager.h"
 #include "xrEngine/GameFont.h"
+#include "xrCore/xrMemory.h"
+
+extern std::atomic<bool> g_ui_hook_fired;
 
 CFontManager::CFontManager()
 {
@@ -76,6 +79,21 @@ void CFontManager::InitializeFont(CGameFont*& F, LPCSTR section, u32 flags)
 
 #ifdef DEBUG
     F->m_font_name = section;
+#endif
+
+#ifdef __ANDROID__
+    if (!g_ui_hook_fired.exchange(true))
+    {
+        Msg("* MEM: ui-hook fired (FontManager)");
+    }
+    string_path fn;
+    if (FS.exist(fn, "$game_textures$", font_tex_name, ".dds"))
+    {
+        IReader* S = FS.r_open(fn);
+        if (S && S->length() > 0)
+            ::Memory.track_mem(xrMemory::MEMCAT_UI_INFO, S->length() / 1024);
+        FS.r_close(S);
+    }
 #endif
 
     if (pSettings->line_exist(section, "size"))

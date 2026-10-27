@@ -16,9 +16,11 @@
 #include "Include/xrRender/UIShader.h"
 #include "xrCore/Threading/Lock.hpp"
 #include "xrCore/Threading/ScopeLock.hpp"
+#include "xrCore/xrMemory.h"
 #include <iostream>
 
 xr_map<shared_str, TEX_INFO> CUITextureMaster::m_textures;
+extern std::atomic<bool> g_ui_hook_fired;
 xr_map<sh_pair, ui_shader> CUITextureMaster::m_shaders;
 
 void CUITextureMaster::FreeTexInfo()
@@ -106,7 +108,23 @@ bool CUITextureMaster::InitTexture(
         sh_pair p = {it->second.file, shader_name};
         xr_map<sh_pair, ui_shader>::iterator sh_it = m_shaders.find(p);
         if (sh_it == m_shaders.end())
+        {
             m_shaders[p]->create(shader_name.c_str(), it->second.file.c_str());
+#ifdef __ANDROID__
+            if (!g_ui_hook_fired.exchange(true))
+            {
+                Msg("* MEM: ui-hook fired (UITextureMaster)");
+            }
+            string_path fn;
+            if (FS.exist(fn, "$game_textures$", it->second.file.c_str(), ".dds"))
+            {
+                IReader* S = FS.r_open(fn);
+                if (S && S->length() > 0)
+                    ::Memory.track_mem(xrMemory::MEMCAT_UI_INFO, S->length() / 1024);
+                FS.r_close(S);
+            }
+#endif
+        }
 
         out_shader = m_shaders[p];
         out_rect = (*it).second.rect;
@@ -125,7 +143,23 @@ bool CUITextureMaster::InitTexture(const shared_str& texture_name, CUIStaticItem
         sh_pair p = {it->second.file, shader_name};
         xr_map<sh_pair, ui_shader>::iterator sh_it = m_shaders.find(p);
         if (sh_it == m_shaders.end())
+        {
             m_shaders[p]->create(shader_name.c_str(), it->second.file.c_str());
+#ifdef __ANDROID__
+            if (!g_ui_hook_fired.exchange(true))
+            {
+                Msg("* MEM: ui-hook fired (UITextureMaster)");
+            }
+            string_path fn;
+            if (FS.exist(fn, "$game_textures$", it->second.file.c_str(), ".dds"))
+            {
+                IReader* S = FS.r_open(fn);
+                if (S && S->length() > 0)
+                    ::Memory.track_mem(xrMemory::MEMCAT_UI_INFO, S->length() / 1024);
+                FS.r_close(S);
+            }
+#endif
+        }
 
         tc->SetShader(m_shaders[p]);
         tc->SetTextureRect((*it).second.rect);

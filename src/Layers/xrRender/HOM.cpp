@@ -71,11 +71,12 @@ void CHOM::Load()
     }
     Msg("* Loading HOM: %s", fName);
     log_memory_phase("loading_hom");
-#ifdef __ANDROID__
-    ::Memory.track_mem(xrMemory::MEMCAT_LEVEL, fs->length() / 1024);
-#endif
 
     IReader* fs = FS.r_open(fName);
+#ifdef __ANDROID__
+    if (fs && fs->length() > 0)
+        ::Memory.track_mem(xrMemory::MEMCAT_LEVEL_INFO, fs->length() / 1024);
+#endif
 
     // Prepare AABB-tree
     static const bool use_cache = !strstr(Core.Params, "-no_cdb_cache");
@@ -155,7 +156,7 @@ void CHOM::Load()
 #ifdef __ANDROID__
     size_t model_mem = (m_pModel ? m_pModel->memory() : 0) + (m_pTris ? CL.getTS() * sizeof(occTri) : 0);
     if (model_mem > 0)
-        ::Memory.track_mem(xrMemory::MEMCAT_LEVEL, model_mem / 1024);
+        ::Memory.track_mem(xrMemory::MEMCAT_LEVEL_INFO, model_mem / 1024);
 #endif
 
     bEnabled = TRUE;

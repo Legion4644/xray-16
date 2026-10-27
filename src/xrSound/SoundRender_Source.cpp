@@ -254,7 +254,7 @@ bool CSoundRender_Source::LoadWave(pcstr pName)
 
 #ifdef __ANDROID__
     if (dwBytesTotal > 0)
-        ::Memory.track_mem(xrMemory::MEMCAT_SOUND, dwBytesTotal / 1024);
+        ::Memory.track_mem(xrMemory::MEMCAT_SOUND_INFO, dwBytesTotal / 1024);
 #endif
 
     return true;

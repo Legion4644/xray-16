@@ -145,7 +145,7 @@ void CScriptEngine::reinit()
 
 #ifdef __ANDROID__
     if (scriptBufferSize > 0)
-        ::Memory.track_mem(xrMemory::MEMCAT_SCRIPT, scriptBufferSize / 1024);
+        ::Memory.track_mem(xrMemory::MEMCAT_SCRIPT_INFO, scriptBufferSize / 1024);
 #endif
 
     if (m_profiler)

@@ -124,7 +124,7 @@ dxRender_Visual* CModelPool::Instance_Load(const char* N, BOOL allow_register)
 
 #ifdef __ANDROID__
     if (data->length() > 0)
-        ::Memory.track_mem(xrMemory::MEMCAT_LEVEL, data->length() / 1024);
+        ::Memory.track_mem(xrMemory::MEMCAT_LEVEL_INFO, data->length() / 1024);
 #endif
 
     FS.r_close(data);

@@ -235,7 +235,7 @@ void CDetailManager::Load()
     detail_mem += objects.size() * sizeof(CDetail);
     detail_mem += m_visibles[0].size() * sizeof(u32) * 3;
     if (detail_mem > 0)
-        ::Memory.track_mem(xrMemory::MEMCAT_LEVEL, detail_mem / 1024);
+        ::Memory.track_mem(xrMemory::MEMCAT_LEVEL_INFO, detail_mem / 1024);
 #endif
 }
 #endif

@@ -424,11 +424,6 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     int img_loaded_lod = is_target_cube(texture_target) ? 0 : get_texture_load_lod(fn);
     ret_msize = calc_texture_size(img_loaded_lod, mip_cnt, img_size);
 
-#ifdef __ANDROID__
-    if (ret_msize > 0)
-        ::Memory.track_mem(xrMemory::MEMCAT_TEXGPU, ret_msize / 1024);
-#endif
-
     return pTexture;
 }
 } // namespace xray::render::RENDER_NAMESPACE

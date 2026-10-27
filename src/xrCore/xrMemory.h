@@ -13,15 +13,17 @@ public:
 
     enum MemCategory : u32
     {
-        MEMCAT_TEXGPU   = 0,
-        MEMCAT_ALLOC    = 1,
-        MEMCAT_LEVEL    = 2,
-        MEMCAT_SHADERS  = 3,
-        MEMCAT_UI       = 4,
-        MEMCAT_SCRIPT   = 5,
-        MEMCAT_SOUND    = 6,
-        MEMCAT_PHYS     = 7,
-        MEMCAT_COUNT    = 8
+        MEMCAT_HEAP_LIVE    = 0,  // net allocation (alloc - free) via xrMemory/malloc
+        MEMCAT_GPU_TEX_LIVE = 1,  // GPU texture memory currently live (load - unload)
+        MEMCAT_GPU_RT_LIVE  = 2,  // GPU render target memory currently live
+        // Informational categories (excluded from residual formula)
+        MEMCAT_LEVEL_INFO   = 3,
+        MEMCAT_SHADERS_INFO = 4,
+        MEMCAT_UI_INFO      = 5,
+        MEMCAT_SCRIPT_INFO  = 6,
+        MEMCAT_SOUND_INFO   = 7,
+        MEMCAT_PHYS_INFO    = 8,
+        MEMCAT_COUNT        = 9
     };
 
 public:
