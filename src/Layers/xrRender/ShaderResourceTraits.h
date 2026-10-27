@@ -774,6 +774,11 @@ T* CResourceManager::CreateShader(cpcstr name, pcstr filename /*= nullptr*/, u32
 
         CHECK_OR_EXIT(!FAILED(_hr), "Your video card doesn't meet game requirements.\n\nTry to lower game settings.");
 
+#ifdef __ANDROID__
+        if (size > 0)
+            ::Memory.track_mem(xrMemory::MEMCAT_SHADERS, size / 1024);
+#endif
+
         return sh;
     }
 }

@@ -71,7 +71,12 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     ++s_texture_load_count;
     if (s_texture_load_count % 50 == 0)
     {
-        log_memory_phase("texture_50");
+        if (s_texture_load_count == 50)
+            log_memory_phase("texture_50");
+        else if (s_texture_load_count == 100)
+            log_memory_phase("texture_100");
+        else if (s_texture_load_count == 200)
+            log_memory_phase("texture_200");
     }
 
     GLuint pTexture = 0;
@@ -418,6 +423,12 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     ret_height = tex_extent.y;
     int img_loaded_lod = is_target_cube(texture_target) ? 0 : get_texture_load_lod(fn);
     ret_msize = calc_texture_size(img_loaded_lod, mip_cnt, img_size);
+
+#ifdef __ANDROID__
+    if (ret_msize > 0)
+        ::Memory.track_mem(xrMemory::MEMCAT_TEXGPU, ret_msize / 1024);
+#endif
+
     return pTexture;
 }
 } // namespace xray::render::RENDER_NAMESPACE

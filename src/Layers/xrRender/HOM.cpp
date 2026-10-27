@@ -71,6 +71,9 @@ void CHOM::Load()
     }
     Msg("* Loading HOM: %s", fName);
     log_memory_phase("loading_hom");
+#ifdef __ANDROID__
+    ::Memory.track_mem(xrMemory::MEMCAT_LEVEL, fs->length() / 1024);
+#endif
 
     IReader* fs = FS.r_open(fName);
 
@@ -148,6 +151,12 @@ void CHOM::Load()
         if (use_cache)
             m_pModel->serialize(fName);
     }
+
+#ifdef __ANDROID__
+    size_t model_mem = (m_pModel ? m_pModel->memory() : 0) + (m_pTris ? CL.getTS() * sizeof(occTri) : 0);
+    if (model_mem > 0)
+        ::Memory.track_mem(xrMemory::MEMCAT_LEVEL, model_mem / 1024);
+#endif
 
     bEnabled = TRUE;
     FS.r_close(fs);

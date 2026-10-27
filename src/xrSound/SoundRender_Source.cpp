@@ -251,6 +251,12 @@ bool CSoundRender_Source::LoadWave(pcstr pName)
     });
 
     ov_clear(&ovf);
+
+#ifdef __ANDROID__
+    if (dwBytesTotal > 0)
+        ::Memory.track_mem(xrMemory::MEMCAT_SOUND, dwBytesTotal / 1024);
+#endif
+
     return true;
 }
 

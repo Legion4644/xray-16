@@ -143,6 +143,11 @@ void CScriptEngine::reinit()
     scriptBufferSize = 1024 * 1024;
     scriptBuffer = xr_alloc<char>(scriptBufferSize);
 
+#ifdef __ANDROID__
+    if (scriptBufferSize > 0)
+        ::Memory.track_mem(xrMemory::MEMCAT_SCRIPT, scriptBufferSize / 1024);
+#endif
+
     if (m_profiler)
         m_profiler->OnReinit(m_virtual_machine);
 }

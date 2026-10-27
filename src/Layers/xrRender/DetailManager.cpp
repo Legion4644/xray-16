@@ -229,6 +229,14 @@ void CDetailManager::Load()
     swing_desc[1].rot1 = pSettings->r_float("details", "swing_fast_rot1");
     swing_desc[1].rot2 = pSettings->r_float("details", "swing_fast_rot2");
     swing_desc[1].speed = pSettings->r_float("details", "swing_fast_speed");
+
+#ifdef __ANDROID__
+    size_t detail_mem = dtFS ? dtFS->length() : 0;
+    detail_mem += objects.size() * sizeof(CDetail);
+    detail_mem += m_visibles[0].size() * sizeof(u32) * 3;
+    if (detail_mem > 0)
+        ::Memory.track_mem(xrMemory::MEMCAT_LEVEL, detail_mem / 1024);
+#endif
 }
 #endif
 void CDetailManager::Unload()

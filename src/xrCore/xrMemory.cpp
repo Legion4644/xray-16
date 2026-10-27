@@ -179,6 +179,8 @@ XRCORE_API void log_memory_phase(pcstr phase)
 
     Msg("* [MEM:%s] VmRSS[%zu KB] VmSize[%zu KB] free[%zu KB] committed[%zu KB]", 
         phase, vm_rss, vm_size, w_free / 1024, w_committed / 1024);
+
+    Memory.log_memmap(phase);
 }
 
 size_t xrMemory::mem_usage()
@@ -400,4 +402,129 @@ XRCORE_API void* xr_malloc(size_t size)
 XRCORE_API void* xr_realloc(void* ptr, size_t size)
 {
     return Memory.mem_realloc(ptr, size);
+}
+
+namespace
+{
+    std::atomic<size_t> g_mem_counters[xrMemory::MEMCAT_COUNT]{};
+    std::atomic<size_t> g_mem_boot_baseline[xrMemory::MEMCAT_COUNT]{};
+    bool g_boot_snapshotted = false;
+    std::string g_uninstr_list;
+}
+
+void xrMemory::track_mem(MemCategory cat, size_t delta_kb)
+{
+    if (cat < MEMCAT_COUNT)
+    {
+        g_mem_counters[cat].fetch_add(delta_kb, std::memory_order_relaxed);
+    }
+}
+
+size_t xrMemory::get_mem(MemCategory cat) const
+{
+    if (cat < MEMCAT_COUNT)
+        return g_mem_counters[cat].load(std::memory_order_relaxed);
+    return 0;
+}
+
+size_t xrMemory::get_mem_delta(MemCategory cat) const
+{
+    if (cat < MEMCAT_COUNT)
+    {
+        size_t current = g_mem_counters[cat].load(std::memory_order_relaxed);
+        size_t baseline = g_mem_boot_baseline[cat].load(std::memory_order_relaxed);
+        return (current > baseline) ? (current - baseline) : 0;
+    }
+    return 0;
+}
+
+void xrMemory::snapshot_boot_baseline()
+{
+    if (!g_boot_snapshotted)
+    {
+        for (u32 i = 0; i < MEMCAT_COUNT; ++i)
+        {
+            g_mem_boot_baseline[i].store(g_mem_counters[i].load(std::memory_order_relaxed), std::memory_order_relaxed);
+        }
+        g_boot_snapshotted = true;
+    }
+}
+
+const std::string& xrMemory::get_uninstr_list() const
+{
+    return g_uninstr_list;
+}
+
+void xrMemory::add_uninstr(pcstr name)
+{
+    if (!g_uninstr_list.empty())
+        g_uninstr_list += ",";
+    g_uninstr_list += name;
+}
+
+void xrMemory::log_memmap(pcstr phase)
+{
+#ifdef __ANDROID__
+    static bool s_uninstr_init = false;
+    if (!s_uninstr_init && xr_strcmp(phase, "boot") == 0)
+    {
+        add_uninstr("lua_internal_heap");
+        add_uninstr("physics_ODE_internals");
+        add_uninstr("video_memory_non_tex");
+        add_uninstr("render_thread_stacks");
+        add_uninstr("system_malloc_overhead");
+        s_uninstr_init = true;
+    }
+
+    size_t vm_rss = 0;
+    FILE* f = fopen("/proc/self/status", "r");
+    if (f)
+    {
+        char line[256];
+        while (fgets(line, sizeof(line), f))
+        {
+            if (strncmp(line, "VmRSS:", 6) == 0)
+            {
+                sscanf(line + 6, "%zu", &vm_rss);
+                break;
+            }
+        }
+        fclose(f);
+    }
+
+    size_t texGPU_abs = get_mem(MEMCAT_TEXGPU);
+    size_t texGPU_delta = get_mem_delta(MEMCAT_TEXGPU);
+    size_t alloc_abs = get_mem(MEMCAT_ALLOC);
+    size_t alloc_delta = get_mem_delta(MEMCAT_ALLOC);
+    size_t level_abs = get_mem(MEMCAT_LEVEL);
+    size_t level_delta = get_mem_delta(MEMCAT_LEVEL);
+    size_t shaders_abs = get_mem(MEMCAT_SHADERS);
+    size_t shaders_delta = get_mem_delta(MEMCAT_SHADERS);
+    size_t ui_abs = get_mem(MEMCAT_UI);
+    size_t ui_delta = get_mem_delta(MEMCAT_UI);
+    size_t script_abs = get_mem(MEMCAT_SCRIPT);
+    size_t script_delta = get_mem_delta(MEMCAT_SCRIPT);
+    size_t sound_abs = get_mem(MEMCAT_SOUND);
+    size_t sound_delta = get_mem_delta(MEMCAT_SOUND);
+    size_t phys_abs = get_mem(MEMCAT_PHYS);
+    size_t phys_delta = get_mem_delta(MEMCAT_PHYS);
+
+    size_t sum_abs = texGPU_abs + alloc_abs + level_abs + shaders_abs + ui_abs + script_abs + sound_abs + phys_abs;
+    size_t residual = (vm_rss > sum_abs) ? (vm_rss - sum_abs) : 0;
+
+    Msg("* [MEMMAP:%s] RSS=%zu texGPU=%zu/+%zu alloc=%zu/+%zu level=%zu/+%zu shaders=%zu/+%zu ui=%zu/+%zu script=%zu/+%zu sound=%zu/+%zu phys=%zu/+%zu uninstr=%s residual=%zu",
+        phase, vm_rss,
+        texGPU_abs, texGPU_delta,
+        alloc_abs, alloc_delta,
+        level_abs, level_delta,
+        shaders_abs, shaders_delta,
+        ui_abs, ui_delta,
+        script_abs, script_delta,
+        sound_abs, sound_delta,
+        phys_abs, phys_delta,
+        g_uninstr_list.empty() ? "none" : g_uninstr_list.c_str(),
+        residual);
+#else
+    (void)phase;
+#endif
 }

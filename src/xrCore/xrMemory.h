@@ -3,11 +3,26 @@
 #include "xr_types.h"
 
 #include <new>
+#include <atomic>
+#include <string>
 
 class XRCORE_API xrMemory
 {
 public:
     static constexpr size_t SMALL_SIZE_MAX = 128 * sizeof(void*);
+
+    enum MemCategory : u32
+    {
+        MEMCAT_TEXGPU   = 0,
+        MEMCAT_ALLOC    = 1,
+        MEMCAT_LEVEL    = 2,
+        MEMCAT_SHADERS  = 3,
+        MEMCAT_UI       = 4,
+        MEMCAT_SCRIPT   = 5,
+        MEMCAT_SOUND    = 6,
+        MEMCAT_PHYS     = 7,
+        MEMCAT_COUNT    = 8
+    };
 
 public:
     xrMemory() = default;
@@ -29,6 +44,14 @@ public:
 
     void* small_alloc(size_t size) noexcept;
     void  small_free (void* ptr) noexcept;
+
+    void track_mem(MemCategory cat, size_t delta_kb);
+    size_t get_mem(MemCategory cat) const;
+    size_t get_mem_delta(MemCategory cat) const;
+    void snapshot_boot_baseline();
+    void log_memmap(pcstr phase);
+    const std::string& get_uninstr_list() const;
+    void add_uninstr(pcstr name);
 };
 
 extern XRCORE_API xrMemory Memory;

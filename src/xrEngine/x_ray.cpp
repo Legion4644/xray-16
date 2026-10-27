@@ -325,10 +325,12 @@ CApplication::CApplication(pcstr commandLine, GameModule* game, const std::array
 
     FrameMarkEnd(FRAME_MARK_APPLICATION_STARTUP);
     log_memory_phase("boot");
+    Memory.snapshot_boot_baseline();
 }
 
 CApplication::~CApplication()
 {
+    log_memory_phase("t_shutdown");
     FrameMarkStart(FRAME_MARK_APPLICATION_SHUTDOWN);
 
     if (g_pGamePersistent)

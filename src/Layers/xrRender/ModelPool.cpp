@@ -121,6 +121,12 @@ dxRender_Visual* CModelPool::Instance_Load(const char* N, BOOL allow_register)
     data->r_chunk_safe(OGF_HEADER, &H, sizeof(H));
     dxRender_Visual* V = Instance_Create(H.type);
     V->Load(N, data, 0);
+
+#ifdef __ANDROID__
+    if (data->length() > 0)
+        ::Memory.track_mem(xrMemory::MEMCAT_LEVEL, data->length() / 1024);
+#endif
+
     FS.r_close(data);
 
     // Register material

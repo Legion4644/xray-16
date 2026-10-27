@@ -132,6 +132,13 @@ void CPHWorld::Create(bool mt, CObjectSpace* os, CObjectList* lo)
     ZoneScoped;
 
     LoadParams();
+
+#ifdef __ANDROID__
+    // Physics allocations are managed by ODE internally - difficult to track precisely
+    // Add a baseline estimate for physics world creation
+    ::Memory.track_mem(xrMemory::MEMCAT_PHYS, 1024); // ~1MB baseline for physics world
+    ::Memory.add_uninstr("physics_ODE_internals");
+#endif
     dWorldID phWorld = 0;
     m_object_space = os;
     m_level_objects = lo;
