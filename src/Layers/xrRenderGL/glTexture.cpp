@@ -202,6 +202,31 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
             memcpy(texture.data(), &pixel, sizeof(pixel));
         }
     }
+    else
+    {
+        // Android: apply mip-cut to large uncompressed textures as well (e.g. terrain_zaton.dds 2048x2048 RGBA8)
+        #ifdef __ANDROID__
+        if (texture.target() == gli::TARGET_2D)
+        {
+            gli::texture2d src(texture);
+            auto ext2 = src.extent();
+            int lod = 0;
+            while (lod < static_cast<int>(src.levels()) - 1 && (ext2.x > 1024 || ext2.y > 1024))
+            {
+                ++lod;
+                ext2 = src.extent(lod);
+            }
+            if (lod > 0)
+            {
+                Msg("* MEM: mip-cut active=%d tex=%s %dx%d->lod%d (uncompressed)", 1, fn, src.extent().x, src.extent().y, lod);
+                // Create a new texture2d with only the target mip level
+                gli::texture2d src_lod(src.format(), ext2, 1);
+                std::memcpy(src_lod.data(), src.data(0, 0, lod), src.size(lod));
+                texture = std::move(src_lod);
+            }
+        }
+        #endif
+    }
 #endif
 
     u32 mip_cnt = u32(-1); // XXX: write to it when reading with GLI!
@@ -223,10 +248,10 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     glTexParameteri(target, GL_TEXTURE_BASE_LEVEL, 0);
     glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(texture.levels() - 1));
 
+    xr_vector<u8> reordered;
 #if defined(XR_PLATFORM_WEB) || defined(XR_PLATFORM_GLES)
     const bool swapRedBlue = !gli::is_compressed(texture.format()) && gli::block_size(texture.format()) == 4
         && format.Swizzles[gli::SWIZZLE_RED] == GL_BLUE;
-    xr_vector<u8> reordered;
     const auto texels = [&](size_t layer, size_t face, size_t level) -> const void*
     {
         const void* data = texture.data(layer, face, level);
@@ -371,13 +396,18 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     // Free host pixel buffer immediately after upload to avoid CPU memory bloat
     size_t host_buf_size = texture.size();
     auto texture_target = texture.target(); // save before clear
+    
+    // Clear reordered buffer early if it was used (swapRedBlue path)
+    reordered.clear();
+    reordered.shrink_to_fit();
+    
     texture.clear();
 
-    // Log host buffer size at texture #50 to verify release
+    // Log host buffer size at texture #50 and #100 to verify release
     static int s_host_log_counter = 0;
-    if (++s_host_log_counter == 50)
+    if (++s_host_log_counter == 50 || s_host_log_counter == 100)
     {
-        Msg("* MEM: host buffer freed size=%zu KB (texture #50)", host_buf_size / 1024);
+        Msg("* MEM: host buffer freed size=%zu KB (texture #%d)", host_buf_size / 1024, s_host_log_counter);
     }
 
     FS.r_close(S);
