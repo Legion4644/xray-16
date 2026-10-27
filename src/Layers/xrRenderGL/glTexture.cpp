@@ -9,9 +9,7 @@
 #include <string>
 #include <cstring>
 
-#if defined(XR_PLATFORM_ANDROID) || defined(XR_PLATFORM_LINUX)
 #include <malloc.h>
-#endif
 #if defined(USE_MIMALLOC)
 #include <mimalloc.h>
 #endif
@@ -508,9 +506,28 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
             fclose(f);
         }
 
-#if defined(USE_MIMALLOC)
+        // Android: bionic doesn't have malloc_trim. Use mimalloc collect (linked via xrCore).
         mi_collect(true);
 #else
+    if (gpu_tex_size > 1024 * 1024)
+    {
+        size_t vm_rss_before = 0;
+        FILE* f = fopen("/proc/self/status", "r");
+        if (f)
+        {
+            char line[256];
+            while (fgets(line, sizeof(line), f))
+            {
+                if (strncmp(line, "VmRSS:", 6) == 0)
+                {
+                    sscanf(line + 6, "%zu", &vm_rss_before);
+                    break;
+                }
+            }
+            fclose(f);
+        }
+
+        // Desktop glibc: use malloc_trim
         malloc_trim(0);
 #endif
 
