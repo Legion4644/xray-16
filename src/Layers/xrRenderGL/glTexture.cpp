@@ -486,76 +486,7 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     
     texture.clear();
 
-    // Trim test for large textures: ask allocator to release retained pages
-#ifdef __ANDROID__
-    if (gpu_tex_size > 1024 * 1024)
-    {
-        size_t vm_rss_before = 0;
-        FILE* f = fopen("/proc/self/status", "r");
-        if (f)
-        {
-            char line[256];
-            while (fgets(line, sizeof(line), f))
-            {
-                if (strncmp(line, "VmRSS:", 6) == 0)
-                {
-                    sscanf(line + 6, "%zu", &vm_rss_before);
-                    break;
-                }
-            }
-            fclose(f);
-        }
-
-        // Android: bionic doesn't have malloc_trim. Use mimalloc collect (linked via xrCore).
-        mi_collect(true);
-#else
-    if (gpu_tex_size > 1024 * 1024)
-    {
-        size_t vm_rss_before = 0;
-        FILE* f = fopen("/proc/self/status", "r");
-        if (f)
-        {
-            char line[256];
-            while (fgets(line, sizeof(line), f))
-            {
-                if (strncmp(line, "VmRSS:", 6) == 0)
-                {
-                    sscanf(line + 6, "%zu", &vm_rss_before);
-                    break;
-                }
-            }
-            fclose(f);
-        }
-
-        // Desktop glibc: use malloc_trim
-        malloc_trim(0);
-#endif
-
-        size_t vm_rss_after = 0;
-        f = fopen("/proc/self/status", "r");
-        if (f)
-        {
-            char line[256];
-            while (fgets(line, sizeof(line), f))
-            {
-                if (strncmp(line, "VmRSS:", 6) == 0)
-                {
-                    sscanf(line + 6, "%zu", &vm_rss_after);
-                    break;
-                }
-            }
-            fclose(f);
-        }
-
-        if (vm_rss_before > 0 && vm_rss_after > 0)
-        {
-            long long delta = static_cast<long long>(vm_rss_after) - static_cast<long long>(vm_rss_before);
-            Msg("* MEM: trim-test tex=%s rss_before=%zu rss_after=%zu delta=%lld", fn, vm_rss_before, vm_rss_after, delta);
-        }
-    }
-#endif
-
-    // Log host buffer size at texture #50 and #100 to verify release
+// Log host buffer size at texture #50 and #100 to verify release
     static int s_host_log_counter = 0;
     if (++s_host_log_counter == 50 || s_host_log_counter == 100)
     {
