@@ -106,7 +106,14 @@ static void DumpGLCaps()
     fprintf(f, "HAS_S3TC=%d\n", HasGLExtension("GL_EXT_texture_compression_s3tc") ? 1 : 0);
     fprintf(f, "HAS_ASTC_LDR=%d\n", HasGLExtension("GL_KHR_texture_compression_astc_ldr") ? 1 : 0);
     fprintf(f, "HAS_ASTC_HDR=%d\n", HasGLExtension("GL_KHR_texture_compression_astc_hdr") ? 1 : 0);
-    fprintf(f, "HAS_ETC2=%d\n", HasGLExtension("GL_OES_compressed_ETC2_RGB8_texture") ? 1 : 0);
+    // ETC2 is core in GLES 3.0+, not an extension. Parse GL_VERSION for major.minor.
+    {
+        const char* version_str = SafeGLGetString(GL_VERSION);
+        int major = 0, minor = 0;
+        sscanf(version_str, "OpenGL ES %d.%d", &major, &minor);
+        int etc2_supported = (major > 3 || (major == 3 && minor >= 0)) ? 1 : 0;
+        fprintf(f, "HAS_ETC2=%d\n", etc2_supported);
+    }
     fprintf(f, "HAS_PVRTC=%d\n", HasGLExtension("GL_IMG_texture_compression_pvrtc") ? 1 : 0);
     fprintf(f, "HAS_FLOAT_TEX=%d\n", HasGLExtension("GL_OES_texture_float") ? 1 : 0);
     fprintf(f, "HAS_HALF_FLOAT_COLOR=%d\n", HasGLExtension("GL_EXT_color_buffer_half_float") ? 1 : 0);

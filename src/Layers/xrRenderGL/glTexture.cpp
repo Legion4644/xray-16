@@ -131,7 +131,7 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
             gli::texture2d src(texture);
             
             // Android: safe cutoff for large textures - only load mips that reduce to <= 1024
-            #if defined(XR_PLATFORM_ANDROID)
+            #ifdef __ANDROID__
             auto ext2 = src.extent();
             int lod = 0;
             while (lod < static_cast<int>(src.levels()) - 1 && (ext2.x > 1024 || ext2.y > 1024))
@@ -141,6 +141,7 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
             }
             if (lod > 0)
             {
+                Msg("* MEM: mip-cut active=%d tex=%s %dx%d->lod%d", 1, fn, src.extent().x, src.extent().y, lod);
                 // Create a new texture2d with only the target mip level
                 gli::texture2d src_lod(src.format(), ext2, 1);
                 std::memcpy(src_lod.data(), src.data(0, 0, lod), src.size(lod));
@@ -367,13 +368,25 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
         }
     }
 
+    // Free host pixel buffer immediately after upload to avoid CPU memory bloat
+    size_t host_buf_size = texture.size();
+    auto texture_target = texture.target(); // save before clear
+    texture.clear();
+
+    // Log host buffer size at texture #50 to verify release
+    static int s_host_log_counter = 0;
+    if (++s_host_log_counter == 50)
+    {
+        Msg("* MEM: host buffer freed size=%zu KB (texture #50)", host_buf_size / 1024);
+    }
+
     FS.r_close(S);
 
     xr_strlwr(fn);
     ret_desc = target;
     ret_width = tex_extent.x;
     ret_height = tex_extent.y;
-    int img_loaded_lod = is_target_cube(texture.target()) ? 0 : get_texture_load_lod(fn);
+    int img_loaded_lod = is_target_cube(texture_target) ? 0 : get_texture_load_lod(fn);
     ret_msize = calc_texture_size(img_loaded_lod, mip_cnt, img_size);
     return pTexture;
 }
