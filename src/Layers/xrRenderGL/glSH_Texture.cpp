@@ -411,6 +411,20 @@ void CTexture::Load()
             s_logged_video_enabled = true;
         }
 
+#ifdef __ANDROID__
+        // Track GPU texture memory for video textures (mutually exclusive path, not via texture_load)
+        if (flags.MemoryUsage > 0)
+            ::Memory.track_mem(xrMemory::MEMCAT_GPU_TEX_LIVE, flags.MemoryUsage / 1024);
+        
+        // One-shot log for gpu_tex-path=theora (RISK B - confirm mutual exclusivity)
+        static bool s_gpu_tex_path_theora_logged = false;
+        if (!s_gpu_tex_path_theora_logged && flags.MemoryUsage > 1024 * 1024)
+        {
+            Msg("* MEM: gpu_tex-path=theora tex=%s size_kb=%zu", cName.c_str(), flags.MemoryUsage / 1024);
+            s_gpu_tex_path_theora_logged = true;
+        }
+#endif
+
     }
     else if (FS.exist(fn, "$game_textures$", cName.c_str(), ".avi"))
     {
@@ -427,28 +441,42 @@ void CTexture::Load()
         {
             flags.MemoryUsage = pAVI->m_dwWidth * pAVI->m_dwHeight * 4;
 
-            // Create pixel buffer object
-            glGenBuffers(1, &pBuffer);
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pBuffer);
-            CHK_GL(glBufferData(GL_PIXEL_UNPACK_BUFFER, flags.MemoryUsage, nullptr, GL_STREAM_DRAW));
+                // Create pixel buffer object
+                glGenBuffers(1, &pBuffer);
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pBuffer);
+                CHK_GL(glBufferData(GL_PIXEL_UNPACK_BUFFER, flags.MemoryUsage, nullptr, GL_STREAM_DRAW));
 
-            // Now create texture to copy PBO into
-            GLuint pTexture = 0;
-            const texture_upload_unit uploadUnit(GL_TEXTURE_2D);
-            glGenTextures(1, &pTexture);
-            glBindTexture(GL_TEXTURE_2D, pTexture);
-            CHK_GL(glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, pAVI->m_dwWidth, pAVI->m_dwHeight));
+                // Now create texture to copy PBO into
+                GLuint pTexture = 0;
+                const texture_upload_unit uploadUnit(GL_TEXTURE_2D);
+                glGenTextures(1, &pTexture);
+                glBindTexture(GL_TEXTURE_2D, pTexture);
+                CHK_GL(glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, pAVI->m_dwWidth, pAVI->m_dwHeight));
 
-            pSurface = pTexture;
-            desc = GL_TEXTURE_2D;
-            size_set(pAVI->m_dwWidth, pAVI->m_dwHeight);
-            if (glGetError() != GL_NO_ERROR)
-            {
-                FATAL("Invalid video stream");
-                xr_delete(pAVI);
-                pSurface = 0;
+                pSurface = pTexture;
+                desc = GL_TEXTURE_2D;
+                size_set(pAVI->m_dwWidth, pAVI->m_dwHeight);
+                if (glGetError() != GL_NO_ERROR)
+                {
+                    FATAL("Invalid video stream");
+                    xr_delete(pAVI);
+                    pSurface = 0;
+                }
+
+#ifdef __ANDROID__
+                // Track GPU texture memory for AVI video textures (mutually exclusive path, not via texture_load)
+                if (flags.MemoryUsage > 0)
+                    ::Memory.track_mem(xrMemory::MEMCAT_GPU_TEX_LIVE, flags.MemoryUsage / 1024);
+                
+                // One-shot log for gpu_tex-path=avi (RISK B - confirm mutual exclusivity)
+                static bool s_gpu_tex_path_avi_logged = false;
+                if (!s_gpu_tex_path_avi_logged && flags.MemoryUsage > 1024 * 1024)
+                {
+                    Msg("* MEM: gpu_tex-path=avi tex=%s size_kb=%zu", cName.c_str(), flags.MemoryUsage / 1024);
+                    s_gpu_tex_path_avi_logged = true;
+                }
+#endif
             }
-        }
 #endif
     }
     else if (FS.exist(fn, "$game_textures$", cName.c_str(), ".seq"))
@@ -500,10 +528,6 @@ void CTexture::Load()
             flags.MemoryUsage = mem;
         }
     }
-#ifdef __ANDROID__
-    if (flags.MemoryUsage > 0)
-        ::Memory.track_mem(xrMemory::MEMCAT_GPU_TEX_LIVE, flags.MemoryUsage / 1024);
-#endif
 
     PostLoad();
 }
@@ -521,7 +545,17 @@ void CTexture::Unload()
     flags.bLoaded = FALSE;
 #ifdef __ANDROID__
     if (flags.MemoryUsage > 0)
+    {
         ::Memory.track_mem(xrMemory::MEMCAT_GPU_TEX_LIVE, -(long long)(flags.MemoryUsage / 1024));
+        
+        // One-shot log for gpu_tex-hook unload (RISK C - confirm subtraction happens)
+        static bool s_gpu_tex_unload_logged = false;
+        if (!s_gpu_tex_unload_logged && flags.MemoryUsage > 1024 * 1024)
+        {
+            Msg("* MEM: gpu_tex-hook fired unload tex=%s size_kb=%zu", cName.c_str(), flags.MemoryUsage / 1024);
+            s_gpu_tex_unload_logged = true;
+        }
+    }
 #endif
     if (!seqDATA.empty())
     {

@@ -595,6 +595,8 @@ void xrMemory::log_memmap(pcstr phase)
     size_t sound_info_delta = get_mem_delta(MEMCAT_SOUND_INFO);
     size_t phys_info_abs = get_mem(MEMCAT_PHYS_INFO);
     size_t phys_info_delta = get_mem_delta(MEMCAT_PHYS_INFO);
+    size_t host_nonalloc_abs = get_mem(MEMCAT_HOST_NONALLOC);
+    size_t host_nonalloc_delta = get_mem_delta(MEMCAT_HOST_NONALLOC);
 
     // Residual formula: only primary exclusive live categories
     size_t sum_primary = heap_live_abs + gpu_tex_live_abs + gpu_rt_live_abs;
@@ -602,7 +604,7 @@ void xrMemory::log_memmap(pcstr phase)
 
     // Main log line
     Msg("* [MEMMAP:%s] RSS=%zu heap_live=%zu/+%zu gpu_tex_live=%zu/+%zu gpu_rt_live=%zu/+%zu residual=%zu "
-        "level_info=%zu/+%zu shaders_info=%zu/+%zu ui_info=%zu/+%zu script_info=%zu/+%zu sound_info=%zu/+%zu phys_info=%zu/+%zu "
+        "level_info=%zu/+%zu shaders_info=%zu/+%zu ui_info=%zu/+%zu script_info=%zu/+%zu sound_info=%zu/+%zu phys_info=%zu/+%zu host_nonalloc=%zu/+%zu "
         "uninstr=%s",
         phase, vm_rss,
         heap_live_abs, heap_live_delta,
@@ -615,6 +617,7 @@ void xrMemory::log_memmap(pcstr phase)
         script_info_abs, script_info_delta,
         sound_info_abs, sound_info_delta,
         phys_info_abs, phys_info_delta,
+        host_nonalloc_abs, host_nonalloc_delta,
         g_uninstr_list.empty() ? "none" : g_uninstr_list.c_str());
 
     // Audit line - explains the formula and exclusions
@@ -625,7 +628,7 @@ void xrMemory::log_memmap(pcstr phase)
         int gpu_rt_live_ok = (gpu_rt_live_abs > 0) ? 1 : 0;
         Msg("* [MEMMAP-AUDIT] formula=heap_live+gpu_tex_live+gpu_rt_live; "
             "heap_live=%d gpu_tex_live=%d gpu_rt_live=%d; "
-            "excluded_from_residual=level,shaders,ui,script,sound,phys; "
+            "excluded_from_residual=level,shaders,ui,script,sound,phys,host_nonalloc; "
             "overlap_known=level_heap,shaders_heap,ui_texgpu+heap,script_heap,sound_heap,phys_heap; "
             "proxies_excluded=phys_hardcoded,script_static",
             heap_live_ok, gpu_tex_live_ok, gpu_rt_live_ok);

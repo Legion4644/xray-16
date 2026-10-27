@@ -3,10 +3,18 @@
 //////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
+#include "xrCore/xrMemory.h"
 
 #include <array>
 #include <string>
 #include <cstring>
+
+#if defined(XR_PLATFORM_ANDROID) || defined(XR_PLATFORM_LINUX)
+#include <malloc.h>
+#endif
+#if defined(USE_MIMALLOC)
+#include <mimalloc.h>
+#endif
 
 #include <gli/gli.hpp>
 
@@ -127,6 +135,10 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     gli::texture texture = gli::load((char*)S->pointer(), img_size);
     R_ASSERT2(!texture.empty(), fn);
 
+    // Track if we did DXT->RGBA8 conversion to subtract host buffer later
+    bool dxt_converted = false;
+    size_t dxt_expanded_size = 0;
+
 #if defined(XR_PLATFORM_GLES)
     if (gli::is_compressed(texture.format()))
     {
@@ -164,9 +176,12 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
         }
         if (!converted.empty())
         {
+            dxt_converted = true;
+            dxt_expanded_size = converted.size();
+            
             // Track top 10 DXT->RGBA8 allocations
             static std::array<std::pair<std::string, size_t>, 10> s_top_dxt_allocations{};
-            size_t alloc_size = converted.size();
+            size_t alloc_size = dxt_expanded_size;
             std::string name(fn);
             for (auto& entry : s_top_dxt_allocations)
             {
@@ -196,6 +211,21 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
                         Msg("  %d. %s - %zu KB", rank++, entry.first.c_str(), entry.second / 1024);
                 }
             }
+            
+            // Track DXT->RGBA8 expanded buffer in host_nonalloc (RISK A)
+            // This is the actual RGBA8 buffer allocated by gli::convert, NOT just swapRedBlue
+#ifdef __ANDROID__
+            if (dxt_expanded_size > 0)
+                ::Memory.track_mem(xrMemory::MEMCAT_HOST_NONALLOC, dxt_expanded_size / 1024);
+            
+            // One-shot log for first >1MB DXT->RGBA8 expanded buffer
+            static bool s_host_nonalloc_hook_logged = false;
+            if (!s_host_nonalloc_hook_logged && dxt_expanded_size > 1024 * 1024)
+            {
+                Msg("* MEM: host_nonalloc-hook fired tex=%s size_kb=%zu", fn, dxt_expanded_size / 1024);
+                s_host_nonalloc_hook_logged = true;
+            }
+#endif
             
             texture = std::move(converted);
         }
@@ -398,6 +428,44 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
         }
     }
 
+    // Calculate total GPU texture size (all mip levels)
+    size_t gpu_tex_size = 0;
+    for (size_t level = 0; level < texture.levels(); ++level)
+        gpu_tex_size += texture.size(level);
+
+    // Track GPU texture memory (real upload path)
+#ifdef __ANDROID__
+    if (gpu_tex_size > 0)
+        ::Memory.track_mem(xrMemory::MEMCAT_GPU_TEX_LIVE, gpu_tex_size / 1024);
+#endif
+
+    // Track host_nonalloc for reordered buffer (swapRedBlue path)
+#ifdef __ANDROID__
+    size_t reordered_size = reordered.capacity();
+    if (reordered_size > 0)
+        ::Memory.track_mem(xrMemory::MEMCAT_HOST_NONALLOC, reordered_size / 1024);
+#endif
+
+    // One-shot log for first texture >1MB to prove hook fires on device
+#ifdef __ANDROID__
+    static bool s_gpu_tex_hook_logged = false;
+    if (!s_gpu_tex_hook_logged && gpu_tex_size > 1024 * 1024)
+    {
+        Msg("* MEM: gpu_tex-hook fired load tex=%s size_kb=%zu", fn, gpu_tex_size / 1024);
+        s_gpu_tex_hook_logged = true;
+    }
+#endif
+
+    // One-shot log for gpu_tex-path=dxt-rgba8 (RISK B - confirm mutual exclusivity)
+#ifdef __ANDROID__
+    static bool s_gpu_tex_path_dxt_logged = false;
+    if (!s_gpu_tex_path_dxt_logged && gpu_tex_size > 1024 * 1024)
+    {
+        Msg("* MEM: gpu_tex-path=dxt-rgba8 tex=%s size_kb=%zu", fn, gpu_tex_size / 1024);
+        s_gpu_tex_path_dxt_logged = true;
+    }
+#endif
+
     // Free host pixel buffer immediately after upload to avoid CPU memory bloat
     size_t host_buf_size = texture.size();
     auto texture_target = texture.target(); // save before clear
@@ -406,7 +474,69 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     reordered.clear();
     reordered.shrink_to_fit();
     
+    // Subtract host_nonalloc for reordered buffer after free
+#ifdef __ANDROID__
+    if (reordered_size > 0)
+        ::Memory.track_mem(xrMemory::MEMCAT_HOST_NONALLOC, -(long long)(reordered_size / 1024));
+#endif
+    
+    // Subtract host_nonalloc for DXT->RGBA8 expanded buffer after free (RISK A)
+#ifdef __ANDROID__
+    if (dxt_converted && dxt_expanded_size > 0)
+        ::Memory.track_mem(xrMemory::MEMCAT_HOST_NONALLOC, -(long long)(dxt_expanded_size / 1024));
+#endif
+    
     texture.clear();
+
+    // Trim test for large textures: ask allocator to release retained pages
+#ifdef __ANDROID__
+    if (gpu_tex_size > 1024 * 1024)
+    {
+        size_t vm_rss_before = 0;
+        FILE* f = fopen("/proc/self/status", "r");
+        if (f)
+        {
+            char line[256];
+            while (fgets(line, sizeof(line), f))
+            {
+                if (strncmp(line, "VmRSS:", 6) == 0)
+                {
+                    sscanf(line + 6, "%zu", &vm_rss_before);
+                    break;
+                }
+            }
+            fclose(f);
+        }
+
+#if defined(USE_MIMALLOC)
+        mi_collect(true);
+#else
+        malloc_trim(0);
+#endif
+
+        size_t vm_rss_after = 0;
+        f = fopen("/proc/self/status", "r");
+        if (f)
+        {
+            char line[256];
+            while (fgets(line, sizeof(line), f))
+            {
+                if (strncmp(line, "VmRSS:", 6) == 0)
+                {
+                    sscanf(line + 6, "%zu", &vm_rss_after);
+                    break;
+                }
+            }
+            fclose(f);
+        }
+
+        if (vm_rss_before > 0 && vm_rss_after > 0)
+        {
+            long long delta = static_cast<long long>(vm_rss_after) - static_cast<long long>(vm_rss_before);
+            Msg("* MEM: trim-test tex=%s rss_before=%zu rss_after=%zu delta=%lld", fn, vm_rss_before, vm_rss_after, delta);
+        }
+    }
+#endif
 
     // Log host buffer size at texture #50 and #100 to verify release
     static int s_host_log_counter = 0;
@@ -421,8 +551,8 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     ret_desc = target;
     ret_width = tex_extent.x;
     ret_height = tex_extent.y;
-    int img_loaded_lod = is_target_cube(texture_target) ? 0 : get_texture_load_lod(fn);
-    ret_msize = calc_texture_size(img_loaded_lod, mip_cnt, img_size);
+    // Return actual GPU texture size in KB for accurate memory tracking
+    ret_msize = static_cast<u32>(gpu_tex_size / 1024);
 
     return pTexture;
 }
