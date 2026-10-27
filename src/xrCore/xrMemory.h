@@ -188,3 +188,5 @@ XRCORE_API pstr xr_strdup(pcstr string);
 
 XRCORE_API void log_vminfo();
 XRCORE_API void log_memory_phase(pcstr phase);
+
+XRCORE_API bool memmap_test_and_set_ui_hook_fired();

@@ -161,6 +161,11 @@ XRCORE_API void log_vminfo()
     Msg("* [ %s ]: free[%zu K], reserved[%zu K], committed[%zu K]", SDL_GetPlatform(), w_free / 1024, w_reserved / 1024, w_committed / 1024);
 }
 
+XRCORE_API bool memmap_test_and_set_ui_hook_fired()
+{
+    return g_ui_hook_fired.exchange(true, std::memory_order_acq_rel);
+}
+
 XRCORE_API void log_memory_phase(pcstr phase)
 {
     // Read VmRSS and VmSize from /proc/self/status

@@ -20,7 +20,6 @@
 #include <iostream>
 
 xr_map<shared_str, TEX_INFO> CUITextureMaster::m_textures;
-extern std::atomic<bool> g_ui_hook_fired;
 xr_map<sh_pair, ui_shader> CUITextureMaster::m_shaders;
 
 void CUITextureMaster::FreeTexInfo()
@@ -111,7 +110,7 @@ bool CUITextureMaster::InitTexture(
         {
             m_shaders[p]->create(shader_name.c_str(), it->second.file.c_str());
 #ifdef __ANDROID__
-            if (!g_ui_hook_fired.exchange(true))
+            if (!memmap_test_and_set_ui_hook_fired())
             {
                 Msg("* MEM: ui-hook fired (UITextureMaster)");
             }
@@ -146,7 +145,7 @@ bool CUITextureMaster::InitTexture(const shared_str& texture_name, CUIStaticItem
         {
             m_shaders[p]->create(shader_name.c_str(), it->second.file.c_str());
 #ifdef __ANDROID__
-            if (!g_ui_hook_fired.exchange(true))
+            if (!memmap_test_and_set_ui_hook_fired())
             {
                 Msg("* MEM: ui-hook fired (UITextureMaster)");
             }

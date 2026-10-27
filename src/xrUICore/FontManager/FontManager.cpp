@@ -3,8 +3,6 @@
 #include "xrEngine/GameFont.h"
 #include "xrCore/xrMemory.h"
 
-extern std::atomic<bool> g_ui_hook_fired;
-
 CFontManager::CFontManager()
 {
     m_all_fonts.push_back(&pFontMedium); // used cpp
@@ -82,7 +80,7 @@ void CFontManager::InitializeFont(CGameFont*& F, LPCSTR section, u32 flags)
 #endif
 
 #ifdef __ANDROID__
-    if (!g_ui_hook_fired.exchange(true))
+    if (!memmap_test_and_set_ui_hook_fired())
     {
         Msg("* MEM: ui-hook fired (FontManager)");
     }
