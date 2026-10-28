@@ -67,6 +67,7 @@ void CWeaponKnife::Load(LPCSTR section)
 
     int successCount = 0;
     string1024 missingFields;
+    bool fieldRead[10] = { false };
 
     // array of <name, fallbackName, type, variable>
     constexpr u32 elementsCount = 10;
@@ -97,7 +98,7 @@ void CWeaponKnife::Load(LPCSTR section)
         std::apply(assertField, field);
     }
 
-    const auto processField = [&](pcstr name, pcstr fallback, FieldTypes type, void* outPtr)
+    const auto processField = [&](pcstr name, pcstr fallback, FieldTypes type, void* outPtr, u32 index)
     {
         pcstr nameToRead = nullptr;
         if (pSettings->line_exist(section, name))
@@ -134,17 +135,44 @@ void CWeaponKnife::Load(LPCSTR section)
             break;
         }
         }
+        fieldRead[index] = true;
         successCount++;
     };
 
-    for (const auto& field : fields)
+    for (u32 i = 0; i < elementsCount; ++i)
     {
-        std::apply(processField, field);
+        const auto& field = fields[i];
+        std::apply([&](pcstr name, pcstr fallback, FieldTypes type, void* outPtr)
+        {
+            processField(name, fallback, type, outPtr, i);
+        }, field);
     }
 
-    R_ASSERT4(successCount == elementsCount || successCount == 0,
-        "You need to provide all knife splash parameters or remove them all.",
-        "Missing fields are:", missingFields);
+#if defined(__ANDROID__)
+    if (successCount > 0 && successCount < elementsCount)
+    {
+        Msg("! WeaponKnife: partial splash config in '%s'; using defaults for missing fields.", section);
+
+        if (!fieldRead[0]) m_Hit1SpashDir.set(0.f, -0.3f, 1.f);
+        if (!fieldRead[1]) m_Hit2SpashDir.set(0.f, 0.f, 1.f);
+        if (!fieldRead[2]) m_Hit1Distance = 1.f;
+        if (!fieldRead[3]) m_Hit2Distance = 1.f;
+        if (!fieldRead[4]) m_Hit1SplashRadius = 1.0f;
+        if (!fieldRead[5]) m_Hit2SplashRadius = 1.0f;
+        if (!fieldRead[6]) m_Splash1HitsCount = 3;
+        if (!fieldRead[7]) m_Splash1PerVictimsHCount = 1;
+        if (!fieldRead[8]) m_Splash2HitsCount = 2;
+        if (!fieldRead[9]) m_NextHitDivideFactor = 0.75f;
+
+        successCount = elementsCount;
+    }
+    else
+#endif
+    {
+        R_ASSERT4(successCount == elementsCount || successCount == 0,
+            "You need to provide all knife splash parameters or remove them all.",
+            "Missing fields are:", missingFields);
+    }
 
     oldStrikeMethod = successCount == 0;
 
