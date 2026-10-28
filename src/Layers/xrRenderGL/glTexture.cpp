@@ -16,6 +16,12 @@
 
 #include <gli/gli.hpp>
 
+#if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+extern bool g_gles_has_etc2;
+extern bool g_gles_has_astc_4x4;
+extern bool g_gles_has_astc_4x4_srgb;
+#endif
+
 namespace xray::render::RENDER_NAMESPACE
 {
 void fix_texture_name(pstr fn)
@@ -64,6 +70,110 @@ static int find_mip_for_max_dim(const gli::texture2d& src, int tex_max)
     }
     return lod;
 }
+
+static bool IsAllowedCompressedDirectFormat(gli::format fmt)
+{
+#if defined(XR_PLATFORM_GLES)
+    if (!g_gles_has_astc_4x4 && !g_gles_has_astc_4x4_srgb && !g_gles_has_etc2)
+        return false;
+
+    if (g_gles_has_astc_4x4 && fmt == gli::FORMAT_RGBA_ASTC_4X4_UNORM_BLOCK16)
+        return true;
+
+    if (g_gles_has_astc_4x4_srgb && fmt == gli::FORMAT_RGBA_ASTC_4X4_SRGB_BLOCK16)
+        return true;
+
+    if (g_gles_has_etc2)
+    {
+        if (fmt == gli::FORMAT_RGB_ETC2_UNORM_BLOCK8)
+            return true;
+        if (fmt == gli::FORMAT_RGB_ETC2_SRGB_BLOCK8)
+            return true;
+        if (fmt == gli::FORMAT_RGBA_ETC2_UNORM_BLOCK8)
+            return true;
+        if (fmt == gli::FORMAT_RGBA_ETC2_SRGB_BLOCK8)
+            return true;
+        if (fmt == gli::FORMAT_RGBA_ETC2_UNORM_BLOCK16)
+            return true;
+        if (fmt == gli::FORMAT_RGBA_ETC2_SRGB_BLOCK16)
+            return true;
+    }
+#endif
+    return false;
+}
+
+static bool CutCompressedMipNoExpand(
+    const gli::texture& src,
+    u32 max_dim,
+    gli::texture& dst,
+    int& out_lod)
+{
+    if (src.empty() || !gli::is_compressed(src.format()))
+        return false;
+
+    if (src.target() != gli::TARGET_2D && src.target() != gli::TARGET_CUBE)
+        return false;
+
+    int lod = 0;
+    while (lod < static_cast<int>(src.levels()) - 1)
+    {
+        auto ext = src.extent(lod);
+        if (ext.x <= static_cast<int>(max_dim) && ext.y <= static_cast<int>(max_dim))
+            break;
+        ++lod;
+    }
+
+    if (lod == 0)
+    {
+        dst = src;
+        out_lod = 0;
+        return true;
+    }
+
+    if (lod >= static_cast<int>(src.levels()))
+        return false;
+
+    auto extent_lod = src.extent(lod);
+    if (extent_lod.x <= 0 || extent_lod.y <= 0)
+        return false;
+
+    size_t levels_remaining = src.levels() - lod;
+
+    try
+    {
+        dst = gli::texture(src.target(), src.format(), extent_lod, levels_remaining, src.faces(), src.layers());
+
+        for (size_t layer = 0; layer < src.layers(); ++layer)
+        {
+            for (size_t face = 0; face < src.faces(); ++face)
+            {
+                for (size_t level_dst = 0; level_dst < levels_remaining; ++level_dst)
+                {
+                    size_t level_src = lod + level_dst;
+
+                    const void* src_ptr = src.data(layer, face, level_src);
+                    const void* dst_ptr = dst.data(layer, face, level_dst);
+
+                    size_t src_size = src.size(level_src);
+                    size_t dst_size = dst.size(level_dst);
+
+                    if (!src_ptr || !dst_ptr || src_size == 0 || dst_size < src_size)
+                        return false;
+
+                    std::memcpy(const_cast<void*>(dst_ptr), src_ptr, src_size);
+                }
+            }
+        }
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    out_lod = lod;
+    return true;
+}
+
 #endif
 
 u32 calc_texture_size(int lod, u32 mip_cnt, size_t orig_size)
@@ -151,118 +261,169 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     bool dxt_converted = false;
     size_t dxt_expanded_size = 0;
 
+    // Track if we used compressed direct path
+    bool compressed_direct = false;
+
 #if defined(XR_PLATFORM_GLES)
     if (gli::is_compressed(texture.format()))
     {
-        gli::texture converted;
-        if (texture.target() == gli::TARGET_2D)
+#if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+        // Try compressed direct path for whitelisted formats (ASTC 4x4, ETC2)
+        if (IsAllowedCompressedDirectFormat(texture.format()))
         {
-            gli::texture2d src(texture);
-            
-            // Android: mip-cut before convert based on tex_max (dimension cap)
-            #ifdef __ANDROID__
-            static bool s_tex_max_logged = false;
-            if (!s_tex_max_logged)
+            gli::texture cut;
+            int lod = 0;
+            if (CutCompressedMipNoExpand(texture, psTextureMax, cut, lod))
             {
-                Msg("* MEM: tex_max=%d", psTextureMax);
-                s_tex_max_logged = true;
-            }
-            static bool s_mip_cut_before_convert_logged = false;
-            if (!s_mip_cut_before_convert_logged)
-            {
-                Msg("* MEM: mip-cut-before-convert active=1");
-                s_mip_cut_before_convert_logged = true;
-            }
-            
-            int lod = find_mip_for_max_dim(src, psTextureMax);
-            if (lod > 0)
-            {
-                auto ext_before = src.extent();
-                auto ext_after = src.extent(lod);
-                Msg("* MEM: mip-cut tex=%s %dx%d -> %dx%d (tex_max=%d)", fn, ext_before.x, ext_before.y, ext_after.x, ext_after.y, psTextureMax);
-                
-                // Create a new texture2d with only the target mip level
-                gli::texture2d src_lod(src.format(), ext_after, 1);
-                std::memcpy(src_lod.data(), src.data(0, 0, lod), src.size(lod));
-                gli::texture2d dst = gli::convert(src_lod, gli::FORMAT_RGBA8_UNORM_PACK8);
-                if (!dst.empty())
-                    converted = dst;
+                if (lod > 0)
+                    texture = std::move(cut);
+
+                compressed_direct = true;
+
+                static int s_compressed_direct_log_count = 0;
+                if (s_compressed_direct_log_count < 30)
+                {
+                    ++s_compressed_direct_log_count;
+                    Msg("* TEXTURE-COMPRESSED-DIRECT name=%s target=%d format=%d internal=0x%X w=%d h=%d levels=%u faces=%u layers=%u size_kb=%zu mip_cut=%d lod=%d",
+                        fn,
+                        static_cast<int>(texture.target()),
+                        static_cast<int>(texture.format()),
+                        static_cast<unsigned int>(format.Internal),
+                        static_cast<int>(texture.extent().x),
+                        static_cast<int>(texture.extent().y),
+                        static_cast<unsigned int>(texture.levels()),
+                        static_cast<unsigned int>(texture.faces()),
+                        static_cast<unsigned int>(texture.layers()),
+                        texture.size() / 1024,
+                        lod > 0 ? 1 : 0,
+                        lod);
+                }
             }
             else
             {
-                gli::texture2d dst = gli::convert(src, gli::FORMAT_RGBA8_UNORM_PACK8);
-                if (!dst.empty())
-                    converted = dst;
+                static int s_compressed_direct_skip_log_count = 0;
+                if (s_compressed_direct_skip_log_count < 10)
+                {
+                    ++s_compressed_direct_skip_log_count;
+                    Msg("! TEXTURE-COMPRESSED-DIRECT SKIP name=%s reason=MIP_CUT_FAILED format=%d target=%d",
+                        fn, static_cast<int>(texture.format()), static_cast<int>(texture.target()));
+                }
             }
-            #else
-            {
-                gli::texture2d dst = gli::convert(src, gli::FORMAT_RGBA8_UNORM_PACK8);
-                if (!dst.empty())
-                    converted = dst;
-            }
-            #endif
         }
-        if (!converted.empty())
-        {
-            dxt_converted = true;
-            dxt_expanded_size = converted.size();
-            
-            // Track top 10 DXT->RGBA8 allocations
-            static std::array<std::pair<std::string, size_t>, 10> s_top_dxt_allocations{};
-            size_t alloc_size = dxt_expanded_size;
-            std::string name(fn);
-            for (auto& entry : s_top_dxt_allocations)
-            {
-                if (alloc_size > entry.second)
-                {
-                    entry = {name, alloc_size};
-                    break;
-                }
-            }
-            
-            static bool s_logged_dxt_fallback = false;
-            if (!s_logged_dxt_fallback)
-            {
-                Msg("! GLES: converting compressed texture to RGBA8: %s", fn);
-                s_logged_dxt_fallback = true;
-            }
-            
-            // Log top 10 periodically
-            static int s_dxt_log_counter = 0;
-            if (++s_dxt_log_counter % 50 == 0)
-            {
-                Msg("* [GLES-TOP10-DXT] Top 10 DXT->RGBA8 allocations:");
-                int rank = 1;
-                for (const auto& entry : s_top_dxt_allocations)
-                {
-                    if (entry.second > 0)
-                        Msg("  %d. %s - %zu KB", rank++, entry.first.c_str(), entry.second / 1024);
-                }
-            }
-            
-            // Track DXT->RGBA8 expanded buffer in host_nonalloc (RISK A)
-            // This is the actual RGBA8 buffer allocated by gli::convert, NOT just swapRedBlue
-#ifdef __ANDROID__
-            if (dxt_expanded_size > 0)
-                ::Memory.track_mem(xrMemory::MEMCAT_HOST_NONALLOC, dxt_expanded_size / 1024);
-            
-            // One-shot log for first >1MB DXT->RGBA8 expanded buffer
-            static bool s_host_nonalloc_hook_logged = false;
-            if (!s_host_nonalloc_hook_logged && dxt_expanded_size > 1024 * 1024)
-            {
-                Msg("* MEM: host_nonalloc-hook fired tex=%s size_kb=%zu", fn, dxt_expanded_size / 1024);
-                s_host_nonalloc_hook_logged = true;
-            }
 #endif
-            
-            texture = std::move(converted);
-        }
-        else
+
+        if (!compressed_direct)
         {
-            Msg("! GLES: compressed texture convert failed, using 1x1 RGBA8: %s", fn);
-            texture = gli::texture(gli::TARGET_2D, gli::FORMAT_RGBA8_UNORM_PACK8, gli::extent3d(1, 1, 1), 1, 1, 1);
-            const glm::u8vec4 pixel(255, 0, 255, 255);
-            memcpy(texture.data(), &pixel, sizeof(pixel));
+            gli::texture converted;
+            if (texture.target() == gli::TARGET_2D)
+            {
+                gli::texture2d src(texture);
+                
+                // Android: mip-cut before convert based on tex_max (dimension cap)
+                #ifdef __ANDROID__
+                static bool s_tex_max_logged = false;
+                if (!s_tex_max_logged)
+                {
+                    Msg("* MEM: tex_max=%d", psTextureMax);
+                    s_tex_max_logged = true;
+                }
+                static bool s_mip_cut_before_convert_logged = false;
+                if (!s_mip_cut_before_convert_logged)
+                {
+                    Msg("* MEM: mip-cut-before-convert active=1");
+                    s_mip_cut_before_convert_logged = true;
+                }
+                
+                int lod = find_mip_for_max_dim(src, psTextureMax);
+                if (lod > 0)
+                {
+                    auto ext_before = src.extent();
+                    auto ext_after = src.extent(lod);
+                    Msg("* MEM: mip-cut tex=%s %dx%d -> %dx%d (tex_max=%d)", fn, ext_before.x, ext_before.y, ext_after.x, ext_after.y, psTextureMax);
+                    
+                    // Create a new texture2d with only the target mip level
+                    gli::texture2d src_lod(src.format(), ext_after, 1);
+                    std::memcpy(src_lod.data(), src.data(0, 0, lod), src.size(lod));
+                    gli::texture2d dst = gli::convert(src_lod, gli::FORMAT_RGBA8_UNORM_PACK8);
+                    if (!dst.empty())
+                        converted = dst;
+                }
+                else
+                {
+                    gli::texture2d dst = gli::convert(src, gli::FORMAT_RGBA8_UNORM_PACK8);
+                    if (!dst.empty())
+                        converted = dst;
+                }
+                #else
+                {
+                    gli::texture2d dst = gli::convert(src, gli::FORMAT_RGBA8_UNORM_PACK8);
+                    if (!dst.empty())
+                        converted = dst;
+                }
+                #endif
+            }
+            if (!converted.empty())
+            {
+                dxt_converted = true;
+                dxt_expanded_size = converted.size();
+                
+                // Track top 10 DXT->RGBA8 allocations
+                static std::array<std::pair<std::string, size_t>, 10> s_top_dxt_allocations{};
+                size_t alloc_size = dxt_expanded_size;
+                std::string name(fn);
+                for (auto& entry : s_top_dxt_allocations)
+                {
+                    if (alloc_size > entry.second)
+                    {
+                        entry = {name, alloc_size};
+                        break;
+                    }
+                }
+                
+                static bool s_logged_dxt_fallback = false;
+                if (!s_logged_dxt_fallback)
+                {
+                    Msg("! GLES: converting compressed texture to RGBA8: %s", fn);
+                    s_logged_dxt_fallback = true;
+                }
+                
+                // Log top 10 periodically
+                static int s_dxt_log_counter = 0;
+                if (++s_dxt_log_counter % 50 == 0)
+                {
+                    Msg("* [GLES-TOP10-DXT] Top 10 DXT->RGBA8 allocations:");
+                    int rank = 1;
+                    for (const auto& entry : s_top_dxt_allocations)
+                    {
+                        if (entry.second > 0)
+                            Msg("  %d. %s - %zu KB", rank++, entry.first.c_str(), entry.second / 1024);
+                    }
+                }
+                
+                // Track DXT->RGBA8 expanded buffer in host_nonalloc (RISK A)
+                // This is the actual RGBA8 buffer allocated by gli::convert, NOT just swapRedBlue
+    #ifdef __ANDROID__
+                if (dxt_expanded_size > 0)
+                    ::Memory.track_mem(xrMemory::MEMCAT_HOST_NONALLOC, dxt_expanded_size / 1024);
+                
+                // One-shot log for first >1MB DXT->RGBA8 expanded buffer
+                static bool s_host_nonalloc_hook_logged = false;
+                if (!s_host_nonalloc_hook_logged && dxt_expanded_size > 1024 * 1024)
+                {
+                    Msg("* MEM: host_nonalloc-hook fired tex=%s size_kb=%zu", fn, dxt_expanded_size / 1024);
+                    s_host_nonalloc_hook_logged = true;
+                }
+    #endif
+                
+                texture = std::move(converted);
+            }
+            else
+            {
+                Msg("! GLES: compressed texture convert failed, using 1x1 RGBA8: %s", fn);
+                texture = gli::texture(gli::TARGET_2D, gli::FORMAT_RGBA8_UNORM_PACK8, gli::extent3d(1, 1, 1), 1, 1, 1);
+                const glm::u8vec4 pixel(255, 0, 255, 255);
+                memcpy(texture.data(), &pixel, sizeof(pixel));
+            }
         }
     }
     else
@@ -288,8 +449,7 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     }
 #endif
 
-    u32 mip_cnt = u32(-1); // XXX: write to it when reading with GLI!
-
+    // Translate format early for compressed_direct logging
 #if defined(XR_PLATFORM_WEB) || defined(XR_PLATFORM_GLES)
     gli::gl GL(gli::gl::PROFILE_ES30);
 #else
@@ -299,6 +459,9 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     gli::gl::format const format = GL.translate(texture.format(), texture.swizzles());
     GLenum target = GL.translate(texture.target());
 
+    u32 mip_cnt = u32(-1); // XXX: write to it when reading with GLI!
+
+    const bool use_compressed_direct_upload = compressed_direct;
 
     const texture_upload_unit uploadUnit(target);
     glGenTextures(1, &pTexture);
@@ -331,41 +494,51 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     glm::tvec3<GLsizei> const tex_extent(texture.extent());
 
     GLenum err;
-    switch (texture.target())
+
+    if (use_compressed_direct_upload)
     {
-    case gli::TARGET_2D:
-    case gli::TARGET_CUBE:
+        // Compressed direct path: use glCompressedTexImage2D, no glTexStorage2D
+        // (format.Internal already validated by probe/canary)
+    }
+    else
+    {
+        // Standard path: allocate storage first
+        switch (texture.target())
+        {
+        case gli::TARGET_2D:
+        case gli::TARGET_CUBE:
 #if defined(XR_PLATFORM_GLES)
-        // clear stale GL errors from earlier paths (e.g. Theora video) so the check below reflects only this glTexStorage2D
-        while (glGetError() != GL_NO_ERROR)
-        {
-        }
+            // clear stale GL errors from earlier paths (e.g. Theora video) so the check below reflects only this glTexStorage2D
+            while (glGetError() != GL_NO_ERROR)
+            {
+            }
 #endif
-        glTexStorage2D(target, static_cast<GLint>(texture.levels()), format.Internal,
-                       tex_extent.x, tex_extent.y);
-        err = glGetError();
-        if (err != GL_NO_ERROR)
-        {
-            VERIFY(err == GL_NO_ERROR);
-            Msg("! OpenGL: 0x%x: Invalid 2D texture: '%s' target=0x%x internal=0x%x levels=%d w=%d h=%d",
-                (unsigned int)err, fn, (unsigned int)target, (unsigned int)format.Internal,
-                static_cast<int>(texture.levels()), static_cast<int>(tex_extent.x), static_cast<int>(tex_extent.y));
+            glTexStorage2D(target, static_cast<GLint>(texture.levels()), format.Internal,
+                           tex_extent.x, tex_extent.y);
+            err = glGetError();
+            if (err != GL_NO_ERROR)
+            {
+                VERIFY(err == GL_NO_ERROR);
+                Msg("! OpenGL: 0x%x: Invalid 2D texture: '%s' target=0x%x internal=0x%x levels=%d w=%d h=%d",
+                    (unsigned int)err, fn, (unsigned int)target, (unsigned int)format.Internal,
+                    static_cast<int>(texture.levels()), static_cast<int>(tex_extent.x), static_cast<int>(tex_extent.y));
+            }
+            break;
+        case gli::TARGET_3D:
+        case gli::TARGET_CUBE_ARRAY:
+            glTexStorage3D(target, static_cast<GLint>(texture.levels()), format.Internal,
+                           tex_extent.x, tex_extent.y, tex_extent.z);
+            err = glGetError();
+            if (err != GL_NO_ERROR)
+            {
+                VERIFY(err == GL_NO_ERROR);
+                Msg("! OpenGL: 0x%x: Invalid 3D texture: '%s'", err, fn);
+            }
+            break;
+        default:
+            NODEFAULT;
+            break;
         }
-        break;
-    case gli::TARGET_3D:
-    case gli::TARGET_CUBE_ARRAY:
-        glTexStorage3D(target, static_cast<GLint>(texture.levels()), format.Internal,
-                       tex_extent.x, tex_extent.y, tex_extent.z);
-        err = glGetError();
-        if (err != GL_NO_ERROR)
-        {
-            VERIFY(err == GL_NO_ERROR);
-            Msg("! OpenGL: 0x%x: Invalid 3D texture: '%s'", err, fn);
-        }
-        break;
-    default:
-        NODEFAULT;
-        break;
     }
 
     for (size_t layer = 0; layer < texture.layers(); ++layer)
@@ -379,24 +552,59 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
                          ? static_cast<GLenum>(GL_TEXTURE_CUBE_MAP_POSITIVE_X + face)
                          : target;
 
-                switch (texture.target())
+                const void* level_data = texture.data(layer, face, level);
+                size_t level_size = texture.size(level);
+
+                if (!level_data || level_size == 0)
                 {
-                case gli::TARGET_2D:
-                case gli::TARGET_CUBE:
+                    Msg("! TEXTURE-COMPRESSED-DIRECT name=%s upload=FAIL internal=0x%X level=%zu reason=NULL_OR_EMPTY_DATA",
+                        fn, static_cast<unsigned int>(format.Internal), level);
+                    return 0;
+                }
+
+                if (use_compressed_direct_upload && gli::is_compressed(texture.format()))
                 {
-                    if (gli::is_compressed(texture.format()))
+                    // Direct compressed upload using glCompressedTexImage2D (proven by canary)
+                    glCompressedTexImage2D(sub_target, static_cast<GLint>(level),
+                                0, 0, tex_level_extent.x, tex_level_extent.y,
+                                format.Internal, static_cast<GLsizei>(level_size),
+                                level_data);
+                    err = glGetError();
+                    if (err != GL_NO_ERROR)
                     {
-                        glCompressedTexSubImage2D(sub_target, static_cast<GLint>(level),
-                                    0, 0, tex_level_extent.x, tex_level_extent.y,
-                                    format.Internal, static_cast<GLsizei>(texture.size(level)),
-                                    texture.data(layer, face, level));
-                        err = glGetError();
-                        if (err != GL_NO_ERROR)
+                        Msg("! TEXTURE-COMPRESSED-DIRECT name=%s upload=FAIL internal=0x%X level=%zu w=%d h=%d size=%zu err=0x%X",
+                            fn, static_cast<unsigned int>(format.Internal), level,
+                            static_cast<int>(tex_level_extent.x), static_cast<int>(tex_level_extent.y),
+                            level_size, static_cast<unsigned int>(err));
+                        return 0;
+                    }
+
+                    static int s_compressed_direct_upload_log_count = 0;
+                    if (s_compressed_direct_upload_log_count < 30)
+                    {
+                        ++s_compressed_direct_upload_log_count;
+                        if (level == 0)
                         {
-                            VERIFY(err == GL_NO_ERROR);
-                            Msg("! OpenGL: 0x%x: Invalid 2D compressed subtexture: '%s'", err, fn);
+                            Msg("* TEXTURE-COMPRESSED-DIRECT UPLOAD_OK name=%s internal=0x%X level=%zu w=%d h=%d size=%zu err=0x0",
+                                fn, static_cast<unsigned int>(format.Internal), level,
+                                static_cast<int>(tex_level_extent.x), static_cast<int>(tex_level_extent.y),
+                                level_size);
                         }
                     }
+                }
+                else if (gli::is_compressed(texture.format()))
+                {
+                    glCompressedTexSubImage2D(sub_target, static_cast<GLint>(level),
+                                0, 0, tex_level_extent.x, tex_level_extent.y,
+                                format.Internal, static_cast<GLsizei>(level_size),
+                                level_data);
+                    err = glGetError();
+                    if (err != GL_NO_ERROR)
+                    {
+                        VERIFY(err == GL_NO_ERROR);
+                        Msg("! OpenGL: 0x%x: Invalid 2D compressed subtexture: '%s'", err, fn);
+                    }
+}
                     else
                     {
                         glTexSubImage2D(sub_target, static_cast<GLint>(level),
@@ -409,19 +617,24 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
                             VERIFY(err == GL_NO_ERROR);
                             Msg("! OpenGL: 0x%x: Invalid 2D subtexture: '%s'", err, fn);
                         }
-
                     }
                     break;
                 }
                 case gli::TARGET_3D:
                 case gli::TARGET_CUBE_ARRAY:
                 {
+                    if (use_compressed_direct_upload && gli::is_compressed(texture.format()))
+                    {
+                        Msg("! TEXTURE-COMPRESSED-DIRECT name=%s upload=FAIL reason=3D_NOT_SUPPORTED target=%d",
+                            fn, static_cast<int>(texture.target()));
+                        return 0;
+                    }
                     if (gli::is_compressed(texture.format()))
                     {
                         glCompressedTexSubImage3D(target, static_cast<GLint>(level),
                                     0, 0, 0, tex_level_extent.x, tex_level_extent.y, tex_level_extent.z,
-                                    format.Internal, static_cast<GLsizei>(texture.size(level)),
-                                    texture.data(layer, face, level));
+                                    format.Internal, static_cast<GLsizei>(level_size),
+                                    level_data);
                         err = glGetError();
                         if (err != GL_NO_ERROR)
                         {

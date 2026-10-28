@@ -84,6 +84,10 @@ void CHW::OnAppDeactivate()
 
 namespace
 {
+bool g_gles_has_etc2 = false;
+bool g_gles_has_astc_4x4 = false;
+bool g_gles_has_astc_4x4_srgb = false;
+
 static void DrGLErrorLocal() { while (glGetError() != GL_NO_ERROR) {} }
 
 static GLuint CompileShaderLocal(GLenum type, const char* src)
@@ -353,6 +357,13 @@ static void AndroidRunCompressedTextureProbeOnce()
         fprintf(f, "GL-COMPRESSED-REAL-PROBE: done\n");
         fclose(f);
     }
+
+    g_gles_has_etc2 = (etc2_rgb == 1 && etc2_rgba == 1);
+    g_gles_has_astc_4x4 = (astc_4x4 == 1);
+    g_gles_has_astc_4x4_srgb = (astc_4x4_srgb == 1);
+
+    Msg("* GLES_CAPS: etc2=%d astc_4x4=%d astc_4x4_srgb=%d",
+        g_gles_has_etc2, g_gles_has_astc_4x4, g_gles_has_astc_4x4_srgb);
 
     Msg("* GL-COMPRESSED-REAL-PROBE: done");
 }

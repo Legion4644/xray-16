@@ -87,4 +87,11 @@ struct texture_upload_unit
 };
 
 extern ECORE_API CHW HW;
+
+#if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+extern bool g_gles_has_etc2;
+extern bool g_gles_has_astc_4x4;
+extern bool g_gles_has_astc_4x4_srgb;
+#endif
+
 } // namespace xray::render::RENDER_NAMESPACE
