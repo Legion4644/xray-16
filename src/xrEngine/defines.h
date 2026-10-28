@@ -12,6 +12,7 @@ extern ENGINE_API bool ShadowOfChernobylMode;
 
 // textures
 ENGINE_API extern int psTextureLOD;
+ENGINE_API extern int psTextureMax;
 
 // psDeviceFlags
 enum

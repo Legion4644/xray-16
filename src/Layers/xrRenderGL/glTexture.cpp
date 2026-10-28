@@ -52,6 +52,20 @@ int get_texture_load_lod(LPCSTR fn)
     return 2;
 }
 
+#if defined(__ANDROID__)
+static int find_mip_for_max_dim(const gli::texture2d& src, int tex_max)
+{
+    auto ext = src.extent();
+    int lod = 0;
+    while (lod < static_cast<int>(src.levels()) - 1 && (ext.x > tex_max || ext.y > tex_max))
+    {
+        ++lod;
+        ext = src.extent(lod);
+    }
+    return lod;
+}
+#endif
+
 u32 calc_texture_size(int lod, u32 mip_cnt, size_t orig_size)
 {
     if (1 == mip_cnt)
@@ -145,32 +159,48 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
         {
             gli::texture2d src(texture);
             
-            // Android: safe cutoff for large textures - only load mips that reduce to <= 1024
+            // Android: mip-cut before convert based on tex_max (dimension cap)
             #ifdef __ANDROID__
-            auto ext2 = src.extent();
-            int lod = 0;
-            while (lod < static_cast<int>(src.levels()) - 1 && (ext2.x > 1024 || ext2.y > 1024))
+            static bool s_tex_max_logged = false;
+            if (!s_tex_max_logged)
             {
-                ++lod;
-                ext2 = src.extent(lod);
+                Msg("* MEM: tex_max=%d", psTextureMax);
+                s_tex_max_logged = true;
             }
+            static bool s_mip_cut_before_convert_logged = false;
+            if (!s_mip_cut_before_convert_logged)
+            {
+                Msg("* MEM: mip-cut-before-convert active=1");
+                s_mip_cut_before_convert_logged = true;
+            }
+            
+            int lod = find_mip_for_max_dim(src, psTextureMax);
             if (lod > 0)
             {
-                Msg("* MEM: mip-cut active=%d tex=%s %dx%d->lod%d", 1, fn, src.extent().x, src.extent().y, lod);
+                auto ext_before = src.extent();
+                auto ext_after = src.extent(lod);
+                Msg("* MEM: mip-cut tex=%s %dx%d -> %dx%d (tex_max=%d)", fn, ext_before.x, ext_before.y, ext_after.x, ext_after.y, psTextureMax);
+                
                 // Create a new texture2d with only the target mip level
-                gli::texture2d src_lod(src.format(), ext2, 1);
+                gli::texture2d src_lod(src.format(), ext_after, 1);
                 std::memcpy(src_lod.data(), src.data(0, 0, lod), src.size(lod));
                 gli::texture2d dst = gli::convert(src_lod, gli::FORMAT_RGBA8_UNORM_PACK8);
                 if (!dst.empty())
                     converted = dst;
             }
             else
-            #endif
             {
                 gli::texture2d dst = gli::convert(src, gli::FORMAT_RGBA8_UNORM_PACK8);
                 if (!dst.empty())
                     converted = dst;
             }
+            #else
+            {
+                gli::texture2d dst = gli::convert(src, gli::FORMAT_RGBA8_UNORM_PACK8);
+                if (!dst.empty())
+                    converted = dst;
+            }
+            #endif
         }
         if (!converted.empty())
         {
@@ -242,18 +272,14 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
         if (texture.target() == gli::TARGET_2D)
         {
             gli::texture2d src(texture);
-            auto ext2 = src.extent();
-            int lod = 0;
-            while (lod < static_cast<int>(src.levels()) - 1 && (ext2.x > 1024 || ext2.y > 1024))
-            {
-                ++lod;
-                ext2 = src.extent(lod);
-            }
+            int lod = find_mip_for_max_dim(src, psTextureMax);
             if (lod > 0)
             {
-                Msg("* MEM: mip-cut active=%d tex=%s %dx%d->lod%d (uncompressed)", 1, fn, src.extent().x, src.extent().y, lod);
+                auto ext_before = src.extent();
+                auto ext_after = src.extent(lod);
+                Msg("* MEM: mip-cut tex=%s %dx%d -> %dx%d (tex_max=%d)", fn, ext_before.x, ext_before.y, ext_after.x, ext_after.y, psTextureMax);
                 // Create a new texture2d with only the target mip level
-                gli::texture2d src_lod(src.format(), ext2, 1);
+                gli::texture2d src_lod(src.format(), ext_after, 1);
                 std::memcpy(src_lod.data(), src.data(0, 0, lod), src.size(lod));
                 texture = std::move(src_lod);
             }

@@ -24,3 +24,4 @@ Flags32 psDeviceFlags =
 
 // textures
 int psTextureLOD = 1;
+int psTextureMax = 1024;
