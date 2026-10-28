@@ -7,6 +7,9 @@
 #include "glHW.h"
 #include "xrEngine/XR_IOConsole.h"
 
+#include <vector>
+#include <cstdio>
+
 namespace xray::render::RENDER_NAMESPACE
 {
 CHW HW;
@@ -75,6 +78,284 @@ void CHW::OnAppDeactivate()
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction
 //////////////////////////////////////////////////////////////////////
+#if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+namespace
+{
+static void DrGLErrorLocal() { while (glGetError() != GL_NO_ERROR) {} }
+
+static GLuint CompileShaderLocal(GLenum type, const char* src)
+{
+    GLuint shader = glCreateShader(type);
+    if (!shader)
+    {
+        Msg("[GLES-PROBE] glCreateShader failed, glGetError: %d", static_cast<int>(glGetError()));
+        return 0;
+    }
+
+    glShaderSource(shader, 1, &src, nullptr);
+    glCompileShader(shader);
+
+    GLint ok = 0;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+    if (!ok)
+    {
+        char log[512] = {};
+        glGetShaderInfoLog(shader, static_cast<GLsizei>(sizeof(log)), nullptr, log);
+        Msg("[GLES-PROBE] shader compile failed: %s", log);
+        glDeleteShader(shader);
+        return 0;
+    }
+
+    return shader;
+}
+
+static GLuint LinkProgramLocal(GLuint vs, GLuint fs)
+{
+    GLuint program = glCreateProgram();
+    if (!program)
+    {
+        Msg("[GLES-PROBE] glCreateProgram failed, glGetError: %d", static_cast<int>(glGetError()));
+        return 0;
+    }
+
+    glAttachShader(program, vs);
+    glAttachShader(program, fs);
+    glLinkProgram(program);
+
+    GLint ok = 0;
+    glGetProgramiv(program, GL_LINK_STATUS, &ok);
+    if (!ok)
+    {
+        char log[512] = {};
+        glGetProgramInfoLog(program, static_cast<GLsizei>(sizeof(log)), nullptr, log);
+        Msg("[GLES-PROBE] program link failed: %s", log);
+        glDeleteProgram(program);
+        return 0;
+    }
+
+    return program;
+}
+
+static int ProbeCompressedTextureFormatLocal(const char* name, GLenum internalformat,
+    GLsizei width, GLsizei height, GLsizei imageSize)
+{
+    GLuint tex = 0;
+    glGenTextures(1, &tex);
+    if (!tex)
+    {
+        Msg("! PROBE_COMPRESSED name=%s fmt=0x%X upload=FAIL err=0x%X (gen failed)",
+            name, static_cast<unsigned int>(internalformat), static_cast<unsigned int>(glGetError()));
+        return -1;
+    }
+
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    std::vector<unsigned char> data(imageSize, 0);
+
+    DrGLErrorLocal();
+    glCompressedTexImage2D(GL_TEXTURE_2D, 0, internalformat, width, height, 0, imageSize, data.data());
+    GLenum err = glGetError();
+
+    if (err != GL_NO_ERROR)
+    {
+        Msg("! PROBE_COMPRESSED name=%s fmt=0x%X upload=FAIL err=0x%X",
+            name, static_cast<unsigned int>(internalformat), static_cast<unsigned int>(err));
+        glDeleteTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        return 0;
+    }
+
+    static const char* vs_src =
+        "#version 300 es\n"
+        "layout(location = 0) in vec2 aPos;\n"
+        "layout(location = 1) in vec2 aUV;\n"
+        "out vec2 vUV;\n"
+        "void main() {\n"
+        "    gl_Position = vec4(aPos, 0.0, 1.0);\n"
+        "    vUV = aUV;\n"
+        "}\n";
+
+    static const char* fs_src =
+        "#version 300 es\n"
+        "precision mediump float;\n"
+        "in vec2 vUV;\n"
+        "uniform sampler2D u_tex;\n"
+        "out vec4 fragColor;\n"
+        "void main() {\n"
+        "    fragColor = texture(u_tex, vec2(0.5, 0.5));\n"
+        "}\n";
+
+    GLuint vs = CompileShaderLocal(GL_VERTEX_SHADER, vs_src);
+    GLuint fs = CompileShaderLocal(GL_FRAGMENT_SHADER, fs_src);
+    GLuint program = LinkProgramLocal(vs, fs);
+
+    if (vs) glDeleteShader(vs);
+    if (fs) glDeleteShader(fs);
+
+    if (!program)
+    {
+        Msg("! PROBE_COMPRESSED name=%s fmt=0x%X upload=OK shader=FAIL",
+            name, static_cast<unsigned int>(internalformat));
+        glDeleteTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        return 0;
+    }
+
+    GLuint fbo = 0;
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+    GLuint colorTex = 0;
+    glGenTextures(1, &colorTex);
+    glBindTexture(GL_TEXTURE_2D, colorTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 4, 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTex, 0);
+
+    GLint fbStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (fbStatus != GL_FRAMEBUFFER_COMPLETE)
+    {
+        Msg("! PROBE_COMPRESSED name=%s fmt=0x%X upload=OK draw=FAIL fbo=0x%X",
+            name, static_cast<unsigned int>(internalformat), static_cast<unsigned int>(fbStatus));
+        glDeleteFramebuffers(1, &fbo);
+        glDeleteTextures(1, &colorTex);
+        glDeleteProgram(program);
+        glDeleteTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        return 0;
+    }
+
+    glViewport(0, 0, 4, 4);
+
+    glUseProgram(program);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    GLint uloc = glGetUniformLocation(program, "u_tex");
+    if (uloc >= 0)
+        glUniform1i(uloc, 0);
+
+    static const GLfloat quad[] =
+    {
+        -1.0f, -1.0f, 0.0f, 0.0f,
+         1.0f, -1.0f, 1.0f, 0.0f,
+        -1.0f,  1.0f, 0.0f, 1.0f,
+         1.0f,  1.0f, 1.0f, 1.0f
+    };
+
+    GLuint vao = 0, vbo = 0;
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), reinterpret_cast<const void*>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), reinterpret_cast<const void*>(2 * sizeof(GLfloat)));
+
+    DrGLErrorLocal();
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    GLenum drawErr = glGetError();
+
+    if (drawErr != GL_NO_ERROR)
+    {
+        Msg("! PROBE_COMPRESSED name=%s fmt=0x%X upload=OK draw=FAIL err=0x%X",
+            name, static_cast<unsigned int>(internalformat), static_cast<unsigned int>(drawErr));
+        glDeleteBuffers(1, &vbo);
+        glDeleteVertexArrays(1, &vao);
+        glDeleteFramebuffers(1, &fbo);
+        glDeleteTextures(1, &colorTex);
+        glDeleteProgram(program);
+        glDeleteTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glUseProgram(0);
+        return 0;
+    }
+
+    unsigned char pixel[4] = { 0, 0, 0, 0 };
+    glReadPixels(2, 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+    GLenum readErr = glGetError();
+
+    Msg("* PROBE_COMPRESSED name=%s fmt=0x%X upload=OK draw=OK read=OK pixel=rgba(%d,%d,%d,%d) err=0x%X",
+        name, static_cast<unsigned int>(internalformat),
+        pixel[0], pixel[1], pixel[2], pixel[3],
+        static_cast<unsigned int>(readErr));
+
+    glDeleteBuffers(1, &vbo);
+    glDeleteVertexArrays(1, &vao);
+    glDeleteFramebuffers(1, &fbo);
+    glDeleteTextures(1, &colorTex);
+    glDeleteProgram(program);
+    glDeleteTextures(1, &tex);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glUseProgram(0);
+    glActiveTexture(GL_TEXTURE0);
+
+    return 1;
+}
+
+static void AndroidRunCompressedTextureProbeOnce()
+{
+    static bool s_done = false;
+    if (s_done)
+        return;
+    s_done = true;
+
+    FILE* f = fopen("/sdcard/XRay/gl_caps_probe.txt", "w");
+    bool file_ok = (f != nullptr);
+    if (!file_ok)
+    {
+        Msg("! PROBE_COMPRESSED: fopen gl_caps_probe.txt failed, only Msg used");
+    }
+
+    auto probe_and_log = [&](const char* name, GLenum fmt, GLsizei w, GLsizei h, GLsizei imgSize, int& out) -> int
+    {
+        int result = ProbeCompressedTextureFormatLocal(name, fmt, w, h, imgSize);
+        out = (result == 1) ? 1 : (result == -1 ? -1 : 0);
+        if (file_ok)
+        {
+            fprintf(f, "PROBE_COMPRESSED name=%s fmt=0x%X result=%d\n",
+                name, static_cast<unsigned int>(fmt), out);
+        }
+        return result;
+    };
+
+    int dxt1_rgb = 0, dxt1_rgba = 0, dxt3_rgba = 0, dxt5_rgba = 0;
+    int etc2_rgb = 0, etc2_rgba = 0, astc_4x4 = 0, astc_4x4_srgb = 0;
+
+    probe_and_log("DXT1_RGB", 0x83F0, 4, 4, 8, dxt1_rgb);
+    probe_and_log("DXT1_RGBA", 0x83F1, 4, 4, 8, dxt1_rgba);
+    probe_and_log("DXT3_RGBA", 0x83F2, 4, 4, 16, dxt3_rgba);
+    probe_and_log("DXT5_RGBA", 0x83F3, 4, 4, 16, dxt5_rgba);
+    probe_and_log("ETC2_RGB8", 0x9274, 4, 4, 8, etc2_rgb);
+    probe_and_log("ETC2_RGBA8", 0x9278, 4, 4, 16, etc2_rgba);
+    probe_and_log("ASTC_4x4_LDR", 0x93B0, 4, 4, 16, astc_4x4);
+    probe_and_log("ASTC_4x4_SRGB", 0x93D0, 4, 4, 16, astc_4x4_srgb);
+
+    if (file_ok)
+    {
+        fprintf(f, "PROBE_COMPRESSED_SUMMARY: dxt1_rgb=%d dxt1_rgba=%d dxt3_rgba=%d dxt5_rgba=%d etc2_rgb=%d etc2_rgba=%d astc4=%d astc4_srgb=%d\n",
+            dxt1_rgb, dxt1_rgba, dxt3_rgba, dxt5_rgba, etc2_rgb, etc2_rgba, astc_4x4, astc_4x4_srgb);
+        fprintf(f, "GL-COMPRESSED-REAL-PROBE: done\n");
+        fclose(f);
+    }
+
+    Msg("* GL-COMPRESSED-REAL-PROBE: done");
+}
+} // namespace
+#endif
+
 void CHW::CreateDevice(SDL_Window* hWnd)
 {
     ZoneScoped;
@@ -184,6 +465,10 @@ void CHW::CreateDevice(SDL_Window* hWnd)
     Msg("* GPU OpenGL version: %s", OpenGLVersionString);
     Msg("* GPU OpenGL shading language version: %s", ShadingVersion);
     Msg("* GPU OpenGL VTF units: [%d] CTI units: [%d]", iMaxVTFUnits, iMaxCTIUnits);
+
+#if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+    AndroidRunCompressedTextureProbeOnce();
+#endif
 
 #ifdef XR_PLATFORM_WEB
     TextureUploadUnit = u32(iMaxCTIUnits) - 1;
