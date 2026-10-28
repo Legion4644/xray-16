@@ -543,9 +543,42 @@ void CBackend::apply_lmaterial()
 #   error No graphics API selected or enabled!
 #endif
 
+#if defined(USE_OGL) && defined(__ANDROID__)
+    static bool s_first = true;
+    if (s_first) {
+        Msg("* RENDER-DIAG: apply_lmaterial first C=%p dest=%d type=%d samp=%u",
+            (void*)C, (int)C->destination, (int)C->type, (u32)C->samp.index);
+        s_first = false;
+    }
+
+    if (C->destination != RC_dest_sampler || C->type != RC_sampler) {
+        static u32 s_bad = 0;
+        if (s_bad < 10)
+            Msg("! RENDER-DIAG: apply_lmaterial bad constant C=%p dest=%d type=%d",
+                (void*)C, (int)C->destination, (int)C->type);
+        ++s_bad;
+        return;
+    }
+#endif
+
     CTexture* T = get_ActiveTexture(u32(C->samp.index));
+
+#if defined(USE_OGL) && defined(__ANDROID__)
+    float mtl = 1.0f;
+    if (T) {
+        mtl = T->m_material;
+    } else {
+        static u32 s_missing = 0;
+        if (s_missing < 20)
+            Msg("! RENDER-DIAG: apply_lmaterial missing active texture C=%p stage=%u",
+                (void*)C, (u32)C->samp.index);
+        ++s_missing;
+    }
+#else
     VERIFY(T);
     float mtl = T->m_material;
+#endif
+
 #ifdef DEBUG
     if (ps_r2_ls_flags.test(R2FLAG_GLOBALMATERIAL))
         mtl = ps_r2_gmaterial;
