@@ -79,6 +79,9 @@ void CHW::OnAppDeactivate()
 // Construction/Destruction
 //////////////////////////////////////////////////////////////////////
 #if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+#include <gli/gli.hpp>
+#include <gli/gl.hpp>
+
 namespace
 {
 static void DrGLErrorLocal() { while (glGetError() != GL_NO_ERROR) {} }
@@ -353,6 +356,368 @@ static void AndroidRunCompressedTextureProbeOnce()
 
     Msg("* GL-COMPRESSED-REAL-PROBE: done");
 }
+
+static void AndroidRunCompressedFileCanaryOnce()
+{
+    static bool s_done = false;
+    if (s_done)
+        return;
+    s_done = true;
+
+    FILE* f = fopen("/sdcard/XRay/gl_caps_canary.txt", "w");
+    bool file_ok = (f != nullptr);
+    if (!file_ok)
+    {
+        Msg("! CANARY_COMPRESSED: fopen gl_caps_canary.txt failed, only Msg used");
+    }
+
+    struct CanaryResult
+    {
+        int etc2_rgb_dds = -1;
+        int etc2_rgb_ktx = -1;
+        int astc4_srgb_dds = -1;
+        int astc4_srgb_ktx = -1;
+        int astc8_dds = -1;
+    } results;
+
+    const struct TestFile
+    {
+        const char* path;
+        const char* name;
+        int CanaryResult::* result_field;
+    } test_files[] = {
+        { "/sdcard/XRay/tests/kueken7_rgb_etc2_unorm.dds", "kueken7_rgb_etc2_unorm.dds", &CanaryResult::etc2_rgb_dds },
+        { "/sdcard/XRay/tests/kueken7_rgb_etc2_unorm.ktx", "kueken7_rgb_etc2_unorm.ktx", &CanaryResult::etc2_rgb_ktx },
+        { "/sdcard/XRay/tests/kueken7_rgba_astc4x4_srgb.dds", "kueken7_rgba_astc4x4_srgb.dds", &CanaryResult::astc4_srgb_dds },
+        { "/sdcard/XRay/tests/kueken7_rgba_astc4x4_srgb.ktx", "kueken7_rgba_astc4x4_srgb.ktx", &CanaryResult::astc4_srgb_ktx },
+        { "/sdcard/XRay/tests/kueken7_rgba_astc8x8_unorm.dds", "kueken7_rgba_astc8x8_unorm.dds", &CanaryResult::astc8_dds },
+    };
+
+    for (const auto& tf : test_files)
+    {
+        FILE* test_f = fopen(tf.path, "rb");
+        if (!test_f)
+        {
+            Msg("CANARY_FILE name=%s status=MISSING", tf.name);
+            if (file_ok)
+                fprintf(f, "CANARY_FILE name=%s status=MISSING\n", tf.name);
+            continue;
+        }
+        fclose(test_f);
+
+        gli::texture tex = gli::load(tf.path);
+
+        Msg("CANARY_FILE name=%s empty=%d target=%d format=%d compressed=%d block=%d extent=%dx%d levels=%u faces=%u layers=%u size=%zu",
+            tf.name,
+            static_cast<int>(tex.empty()),
+            static_cast<int>(tex.target()),
+            static_cast<int>(tex.format()),
+            static_cast<int>(gli::is_compressed(tex.format())),
+            static_cast<int>(gli::block_size(tex.format())),
+            static_cast<int>(tex.extent(0).x),
+            static_cast<int>(tex.extent(0).y),
+            static_cast<unsigned int>(tex.levels()),
+            static_cast<unsigned int>(tex.faces()),
+            static_cast<unsigned int>(tex.layers()),
+            tex.size());
+
+        if (file_ok)
+        {
+            fprintf(f, "CANARY_FILE name=%s empty=%d target=%d format=%d compressed=%d block=%d extent=%dx%d levels=%u faces=%u layers=%u size=%zu\n",
+                tf.name,
+                static_cast<int>(tex.empty()),
+                static_cast<int>(tex.target()),
+                static_cast<int>(tex.format()),
+                static_cast<int>(gli::is_compressed(tex.format())),
+                static_cast<int>(gli::block_size(tex.format())),
+                static_cast<int>(tex.extent(0).x),
+                static_cast<int>(tex.extent(0).y),
+                static_cast<unsigned int>(tex.levels()),
+                static_cast<unsigned int>(tex.faces()),
+                static_cast<unsigned int>(tex.layers()),
+                tex.size());
+        }
+
+        if (tex.empty())
+        {
+            if (file_ok)
+                fprintf(f, "CANARY_TRANSLATE name=%s status=EMPTY\n", tf.name);
+            continue;
+        }
+
+        if (tex.target() != gli::TARGET_2D)
+        {
+            Msg("CANARY_FILE name=%s status=SKIP_NON_2D target=%d", tf.name, static_cast<int>(tex.target()));
+            if (file_ok)
+                fprintf(f, "CANARY_FILE name=%s status=SKIP_NON_2D target=%d\n", tf.name, static_cast<int>(tex.target()));
+            continue;
+        }
+
+        gli::gl GL(gli::gl::PROFILE_ES30);
+        gli::gl::format const fmt = GL.translate(tex.format(), tex.swizzles());
+
+        Msg("CANARY_TRANSLATE name=%s internal=0x%X external=0x%X type=0x%X",
+            tf.name,
+            static_cast<unsigned int>(fmt.Internal),
+            static_cast<unsigned int>(fmt.External),
+            static_cast<unsigned int>(fmt.Type));
+
+        if (file_ok)
+        {
+            fprintf(f, "CANARY_TRANSLATE name=%s internal=0x%X external=0x%X type=0x%X\n",
+                tf.name,
+                static_cast<unsigned int>(fmt.Internal),
+                static_cast<unsigned int>(fmt.External),
+                static_cast<unsigned int>(fmt.Type));
+        }
+
+        if (fmt.Internal == 0)
+        {
+            Msg("! CANARY_TRANSLATE name=%s FAIL internal=0", tf.name);
+            if (file_ok)
+                fprintf(f, "CANARY_TRANSLATE name=%s status=FAIL_INTERNAL_ZERO\n", tf.name);
+            continue;
+        }
+
+        GLuint texGL = 0;
+        glGenTextures(1, &texGL);
+        if (!texGL)
+        {
+            Msg("! CANARY_UPLOAD name=%s fmt=0x%X gen=FAIL err=0x%X",
+                tf.name, static_cast<unsigned int>(fmt.Internal), static_cast<unsigned int>(glGetError()));
+            if (file_ok)
+                fprintf(f, "CANARY_UPLOAD name=%s fmt=0x%X gen=FAIL\n", tf.name, static_cast<unsigned int>(fmt.Internal));
+            continue;
+        }
+
+        glBindTexture(GL_TEXTURE_2D, texGL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        auto extent = tex.extent(0);
+        size_t imageSize = tex.size(0);
+        const void* data = tex.data(0, 0, 0);
+
+        DrGLErrorLocal();
+        glCompressedTexImage2D(
+            GL_TEXTURE_2D,
+            0,
+            fmt.Internal,
+            static_cast<GLsizei>(extent.x),
+            static_cast<GLsizei>(extent.y),
+            0,
+            static_cast<GLsizei>(imageSize),
+            data);
+        GLenum err = glGetError();
+
+        bool upload_ok = (err == GL_NO_ERROR);
+
+        if (upload_ok)
+        {
+            Msg("CANARY_UPLOAD name=%s fmt=0x%X w=%d h=%d size=%zu upload=OK err=0x0",
+                tf.name, static_cast<unsigned int>(fmt.Internal),
+                static_cast<int>(extent.x), static_cast<int>(extent.y), imageSize);
+            if (file_ok)
+                fprintf(f, "CANARY_UPLOAD name=%s fmt=0x%X w=%d h=%d size=%zu upload=OK err=0x0\n",
+                    tf.name, static_cast<unsigned int>(fmt.Internal),
+                    static_cast<int>(extent.x), static_cast<int>(extent.y), imageSize);
+        }
+        else
+        {
+            Msg("! CANARY_UPLOAD name=%s fmt=0x%X w=%d h=%d size=%zu upload=FAIL err=0x%X",
+                tf.name, static_cast<unsigned int>(fmt.Internal),
+                static_cast<int>(extent.x), static_cast<int>(extent.y), imageSize,
+                static_cast<unsigned int>(err));
+            if (file_ok)
+                fprintf(f, "CANARY_UPLOAD name=%s fmt=0x%X w=%d h=%d size=%zu upload=FAIL err=0x%X\n",
+                    tf.name, static_cast<unsigned int>(fmt.Internal),
+                    static_cast<int>(extent.x), static_cast<int>(extent.y), imageSize,
+                    static_cast<unsigned int>(err));
+
+            glDeleteTextures(1, &texGL);
+            glBindTexture(GL_TEXTURE_2D, 0);
+            continue;
+        }
+
+        static const char* vs_src =
+            "#version 300 es\n"
+            "layout(location = 0) in vec2 aPos;\n"
+            "layout(location = 1) in vec2 aUV;\n"
+            "out vec2 vUV;\n"
+            "void main() {\n"
+            "    gl_Position = vec4(aPos, 0.0, 1.0);\n"
+            "    vUV = aUV;\n"
+            "}\n";
+
+        static const char* fs_src =
+            "#version 300 es\n"
+            "precision mediump float;\n"
+            "in vec2 vUV;\n"
+            "uniform sampler2D u_tex;\n"
+            "out vec4 fragColor;\n"
+            "void main() {\n"
+            "    fragColor = texture(u_tex, vec2(0.5, 0.5));\n"
+            "}\n";
+
+        GLuint vs = CompileShaderLocal(GL_VERTEX_SHADER, vs_src);
+        GLuint fs = CompileShaderLocal(GL_FRAGMENT_SHADER, fs_src);
+        GLuint program = LinkProgramLocal(vs, fs);
+
+        if (vs) glDeleteShader(vs);
+        if (fs) glDeleteShader(fs);
+
+        if (!program)
+        {
+            Msg("! CANARY_DRAW name=%s shader=FAIL", tf.name);
+            if (file_ok)
+                fprintf(f, "CANARY_DRAW name=%s status=SHADER_FAIL\n", tf.name);
+
+            glDeleteTextures(1, &texGL);
+            glBindTexture(GL_TEXTURE_2D, 0);
+            continue;
+        }
+
+        int fbo_w = static_cast<int>(extent.x);
+        int fbo_h = static_cast<int>(extent.y);
+        if (fbo_w > 64) fbo_w = 64;
+        if (fbo_h > 64) fbo_h = 64;
+
+        GLuint fbo = 0;
+        glGenFramebuffers(1, &fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+        GLuint colorTex = 0;
+        glGenTextures(1, &colorTex);
+        glBindTexture(GL_TEXTURE_2D, colorTex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, fbo_w, fbo_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTex, 0);
+
+        GLint fbStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        if (fbStatus != GL_FRAMEBUFFER_COMPLETE)
+        {
+            Msg("! CANARY_DRAW name=%s fbo=FAIL status=0x%X",
+                tf.name, static_cast<unsigned int>(fbStatus));
+            if (file_ok)
+                fprintf(f, "CANARY_DRAW name=%s status=FBO_FAIL fbstatus=0x%X\n",
+                    tf.name, static_cast<unsigned int>(fbStatus));
+
+            glDeleteFramebuffers(1, &fbo);
+            glDeleteTextures(1, &colorTex);
+            glDeleteProgram(program);
+            glDeleteTextures(1, &texGL);
+            glBindTexture(GL_TEXTURE_2D, 0);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            continue;
+        }
+
+        glViewport(0, 0, fbo_w, fbo_h);
+
+        glUseProgram(program);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texGL);
+        GLint uloc = glGetUniformLocation(program, "u_tex");
+        if (uloc >= 0)
+            glUniform1i(uloc, 0);
+
+        static const GLfloat quad[] =
+        {
+            -1.0f, -1.0f, 0.0f, 0.0f,
+             1.0f, -1.0f, 1.0f, 0.0f,
+            -1.0f,  1.0f, 0.0f, 1.0f,
+             1.0f,  1.0f, 1.0f, 1.0f
+        };
+
+        GLuint vao = 0, vbo = 0;
+        glGenVertexArrays(1, &vao);
+        glBindVertexArray(vao);
+        glGenBuffers(1, &vbo);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), reinterpret_cast<const void*>(0));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), reinterpret_cast<const void*>(2 * sizeof(GLfloat)));
+
+        DrGLErrorLocal();
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        GLenum drawErr = glGetError();
+
+        bool draw_ok = (drawErr == GL_NO_ERROR);
+        int pixel_r = 0, pixel_g = 0, pixel_b = 0, pixel_a = 0;
+        GLenum readErr = GL_NO_ERROR;
+
+        if (draw_ok)
+        {
+            unsigned char pixel[4] = { 0, 0, 0, 0 };
+            glReadPixels(fbo_w / 2, fbo_h / 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+            readErr = glGetError();
+            pixel_r = pixel[0];
+            pixel_g = pixel[1];
+            pixel_b = pixel[2];
+            pixel_a = pixel[3];
+        }
+
+        bool read_ok = draw_ok && (readErr == GL_NO_ERROR);
+
+        if (draw_ok && read_ok)
+        {
+            Msg("CANARY_DRAW name=%s draw=OK read=OK pixel=rgba(%d,%d,%d,%d) err=0x%X",
+                tf.name, pixel_r, pixel_g, pixel_b, pixel_a, static_cast<unsigned int>(readErr));
+            if (file_ok)
+                fprintf(f, "CANARY_DRAW name=%s draw=OK read=OK pixel=rgba(%d,%d,%d,%d) err=0x%X\n",
+                    tf.name, pixel_r, pixel_g, pixel_b, pixel_a, static_cast<unsigned int>(readErr));
+            results.*tf.result_field = 1;
+        }
+        else if (!draw_ok)
+        {
+            Msg("! CANARY_DRAW name=%s draw=FAIL err=0x%X",
+                tf.name, static_cast<unsigned int>(drawErr));
+            if (file_ok)
+                fprintf(f, "CANARY_DRAW name=%s status=DRAW_FAIL err=0x%X\n",
+                    tf.name, static_cast<unsigned int>(drawErr));
+            results.*tf.result_field = 0;
+        }
+        else
+        {
+            Msg("! CANARY_DRAW name=%s read=FAIL err=0x%X",
+                tf.name, static_cast<unsigned int>(readErr));
+            if (file_ok)
+                fprintf(f, "CANARY_DRAW name=%s status=READ_FAIL err=0x%X\n",
+                    tf.name, static_cast<unsigned int>(readErr));
+            results.*tf.result_field = 0;
+        }
+
+        glDeleteBuffers(1, &vbo);
+        glDeleteVertexArrays(1, &vao);
+        glDeleteFramebuffers(1, &fbo);
+        glDeleteTextures(1, &colorTex);
+        glDeleteProgram(program);
+        glDeleteTextures(1, &texGL);
+
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glUseProgram(0);
+        glActiveTexture(GL_TEXTURE0);
+    }
+
+    if (file_ok)
+    {
+        fprintf(f, "CANARY_SUMMARY: etc2_rgb_dds=%d etc2_rgb_ktx=%d astc4_srgb_dds=%d astc4_srgb_ktx=%d astc8_dds=%d\n",
+            results.etc2_rgb_dds, results.etc2_rgb_ktx, results.astc4_srgb_dds, results.astc4_srgb_ktx, results.astc8_dds);
+        fprintf(f, "GL-CANARY-COMPRESSED-FILE: done\n");
+        fclose(f);
+    }
+
+    Msg("* CANARY_SUMMARY: etc2_rgb_dds=%d etc2_rgb_ktx=%d astc4_srgb_dds=%d astc4_srgb_ktx=%d astc8_dds=%d",
+        results.etc2_rgb_dds, results.etc2_rgb_ktx, results.astc4_srgb_dds, results.astc4_srgb_ktx, results.astc8_dds);
+    Msg("* GL-CANARY-COMPRESSED-FILE: done");
+}
 } // namespace
 #endif
 
@@ -468,6 +833,7 @@ void CHW::CreateDevice(SDL_Window* hWnd)
 
 #if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
     AndroidRunCompressedTextureProbeOnce();
+    AndroidRunCompressedFileCanaryOnce();
 #endif
 
 #ifdef XR_PLATFORM_WEB
