@@ -32,6 +32,20 @@ constexpr pcstr kRendererMode = "renderer_gles";
 constexpr int kFrameLimit = 300;
 constexpr Uint32 kMinElapsedMs = 5000;
 
+#if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+static GLuint CompileShader(GLenum type, const char* src);
+static GLuint LinkProgram(GLuint vs, GLuint fs);
+static int ProbeCompressedTextureFormat(
+    FILE* f,
+    const char* name,
+    GLenum internalformat,
+    GLsizei width,
+    GLsizei height,
+    GLsizei blockSizeBytes,
+    GLsizei blocksPerRow,
+    GLsizei blocksPerColumn);
+#endif
+
 static pcstr SafeGLGetString(GLenum name)
 {
     const char* s = reinterpret_cast<const char*>(glGetString(name));
@@ -337,8 +351,10 @@ static void DumpGLCaps()
     int astc_4x4 = ProbeCompressedTextureFormat(f, "ASTC_4x4_LDR", 0x93B0, 4, 4, 16, 1, 1);
     int astc_4x4_srgb = ProbeCompressedTextureFormat(f, "ASTC_4x4_SRGB", 0x93D0, 4, 4, 16, 1, 1);
 
-    fprintf(f, "PROBE_COMPRESSED_SUMMARY: dxt1=%d dxt5=%d etc2_rgb=%d etc2_rgba=%d astc4=%d astc4_srgb=%d\n",
-        (dxt1_rgb == 1 || dxt1_rgba == 1) ? 1 : (dxt1_rgb == -1 ? -1 : 0),
+    fprintf(f, "PROBE_COMPRESSED_SUMMARY: dxt1_rgb=%d dxt1_rgba=%d dxt3_rgba=%d dxt5_rgba=%d etc2_rgb=%d etc2_rgba=%d astc4=%d astc4_srgb=%d\n",
+        dxt1_rgb == 1 ? 1 : (dxt1_rgb == -1 ? -1 : 0),
+        dxt1_rgba == 1 ? 1 : (dxt1_rgba == -1 ? -1 : 0),
+        dxt3_rgba == 1 ? 1 : (dxt3_rgba == -1 ? -1 : 0),
         dxt5_rgba == 1 ? 1 : (dxt5_rgba == -1 ? -1 : 0),
         etc2_rgb == 1 ? 1 : (etc2_rgb == -1 ? -1 : 0),
         etc2_rgba == 1 ? 1 : (etc2_rgba == -1 ? -1 : 0),
