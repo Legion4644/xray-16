@@ -373,10 +373,12 @@ static void AndroidRunCompressedFileCanaryOnce()
 
     struct CanaryResult
     {
-        int etc2_rgb_dds = -1;
         int etc2_rgb_ktx = -1;
-        int astc4_srgb_dds = -1;
+        int etc2_srgb_ktx = -1;
         int astc4_srgb_ktx = -1;
+        int etc2_rgb_dds = -1;
+        int etc2_srgb_dds = -1;
+        int astc4_srgb_dds = -1;
         int astc8_dds = -1;
     } results;
 
@@ -386,10 +388,12 @@ static void AndroidRunCompressedFileCanaryOnce()
         const char* name;
         int CanaryResult::* result_field;
     } test_files[] = {
-        { "/sdcard/XRay/tests/kueken7_rgb_etc2_unorm.dds", "kueken7_rgb_etc2_unorm.dds", &CanaryResult::etc2_rgb_dds },
         { "/sdcard/XRay/tests/kueken7_rgb_etc2_unorm.ktx", "kueken7_rgb_etc2_unorm.ktx", &CanaryResult::etc2_rgb_ktx },
-        { "/sdcard/XRay/tests/kueken7_rgba_astc4x4_srgb.dds", "kueken7_rgba_astc4x4_srgb.dds", &CanaryResult::astc4_srgb_dds },
+        { "/sdcard/XRay/tests/kueken7_rgb_etc2_srgb.ktx", "kueken7_rgb_etc2_srgb.ktx", &CanaryResult::etc2_srgb_ktx },
         { "/sdcard/XRay/tests/kueken7_rgba_astc4x4_srgb.ktx", "kueken7_rgba_astc4x4_srgb.ktx", &CanaryResult::astc4_srgb_ktx },
+        { "/sdcard/XRay/tests/kueken7_rgb_etc2_unorm.dds", "kueken7_rgb_etc2_unorm.dds", &CanaryResult::etc2_rgb_dds },
+        { "/sdcard/XRay/tests/kueken7_rgb_etc2_srgb.dds", "kueken7_rgb_etc2_srgb.dds", &CanaryResult::etc2_srgb_dds },
+        { "/sdcard/XRay/tests/kueken7_rgba_astc4x4_srgb.dds", "kueken7_rgba_astc4x4_srgb.dds", &CanaryResult::astc4_srgb_dds },
         { "/sdcard/XRay/tests/kueken7_rgba_astc8x8_unorm.dds", "kueken7_rgba_astc8x8_unorm.dds", &CanaryResult::astc8_dds },
     };
 
@@ -440,32 +444,138 @@ static void AndroidRunCompressedFileCanaryOnce()
 
         if (tex.empty())
         {
+            Msg("CANARY_FILE name=%s status=EMPTY", tf.name);
             if (file_ok)
-                fprintf(f, "CANARY_TRANSLATE name=%s status=EMPTY\n", tf.name);
+                fprintf(f, "CANARY_FILE name=%s status=EMPTY\n", tf.name);
+            continue;
+        }
+
+        if (tex.format() == gli::FORMAT_UNDEFINED)
+        {
+            Msg("CANARY_FILE name=%s status=INVALID_FORMAT reason=FORMAT_UNDEFINED format=%d compressed=%d extent=%dx%d levels=%u faces=%u layers=%u size=%zu",
+                tf.name,
+                static_cast<int>(tex.format()),
+                static_cast<int>(gli::is_compressed(tex.format())),
+                static_cast<int>(tex.extent(0).x),
+                static_cast<int>(tex.extent(0).y),
+                static_cast<unsigned int>(tex.levels()),
+                static_cast<unsigned int>(tex.faces()),
+                static_cast<unsigned int>(tex.layers()),
+                tex.size());
+            if (file_ok)
+                fprintf(f, "CANARY_FILE name=%s status=INVALID_FORMAT reason=FORMAT_UNDEFINED format=%d compressed=%d extent=%dx%d levels=%u faces=%u layers=%u size=%zu\n",
+                    tf.name,
+                    static_cast<int>(tex.format()),
+                    static_cast<int>(gli::is_compressed(tex.format())),
+                    static_cast<int>(tex.extent(0).x),
+                    static_cast<int>(tex.extent(0).y),
+                    static_cast<unsigned int>(tex.levels()),
+                    static_cast<unsigned int>(tex.faces()),
+                    static_cast<unsigned int>(tex.layers()),
+                    tex.size());
+            continue;
+        }
+
+        if (!gli::is_compressed(tex.format()))
+        {
+            Msg("CANARY_FILE name=%s status=NOT_COMPRESSED format=%d compressed=%d extent=%dx%d levels=%u faces=%u layers=%u size=%zu",
+                tf.name,
+                static_cast<int>(tex.format()),
+                static_cast<int>(gli::is_compressed(tex.format())),
+                static_cast<int>(tex.extent(0).x),
+                static_cast<int>(tex.extent(0).y),
+                static_cast<unsigned int>(tex.levels()),
+                static_cast<unsigned int>(tex.faces()),
+                static_cast<unsigned int>(tex.layers()),
+                tex.size());
+            if (file_ok)
+                fprintf(f, "CANARY_FILE name=%s status=NOT_COMPRESSED format=%d compressed=%d extent=%dx%d levels=%u faces=%u layers=%u size=%zu\n",
+                    tf.name,
+                    static_cast<int>(tex.format()),
+                    static_cast<int>(gli::is_compressed(tex.format())),
+                    static_cast<int>(tex.extent(0).x),
+                    static_cast<int>(tex.extent(0).y),
+                    static_cast<unsigned int>(tex.levels()),
+                    static_cast<unsigned int>(tex.faces()),
+                    static_cast<unsigned int>(tex.layers()),
+                    tex.size());
             continue;
         }
 
         if (tex.target() != gli::TARGET_2D)
         {
-            Msg("CANARY_FILE name=%s status=SKIP_NON_2D target=%d", tf.name, static_cast<int>(tex.target()));
+            Msg("CANARY_FILE name=%s status=SKIP_NON_2D target=%d format=%d compressed=%d",
+                tf.name,
+                static_cast<int>(tex.target()),
+                static_cast<int>(tex.format()),
+                static_cast<int>(gli::is_compressed(tex.format())));
             if (file_ok)
-                fprintf(f, "CANARY_FILE name=%s status=SKIP_NON_2D target=%d\n", tf.name, static_cast<int>(tex.target()));
+                fprintf(f, "CANARY_FILE name=%s status=SKIP_NON_2D target=%d format=%d compressed=%d\n",
+                    tf.name,
+                    static_cast<int>(tex.target()),
+                    static_cast<int>(tex.format()),
+                    static_cast<int>(gli::is_compressed(tex.format())));
+            continue;
+        }
+
+        if (tex.levels() == 0)
+        {
+            Msg("CANARY_FILE name=%s status=INVALID_LEVELS levels=%u",
+                tf.name, static_cast<unsigned int>(tex.levels()));
+            if (file_ok)
+                fprintf(f, "CANARY_FILE name=%s status=INVALID_LEVELS levels=%u\n",
+                    tf.name, static_cast<unsigned int>(tex.levels()));
+            continue;
+        }
+
+        auto extent0 = tex.extent(0);
+        if (extent0.x <= 0 || extent0.y <= 0)
+        {
+            Msg("CANARY_FILE name=%s status=INVALID_EXTENT extent=%dx%d",
+                tf.name, static_cast<int>(extent0.x), static_cast<int>(extent0.y));
+            if (file_ok)
+                fprintf(f, "CANARY_FILE name=%s status=INVALID_EXTENT extent=%dx%d\n",
+                    tf.name, static_cast<int>(extent0.x), static_cast<int>(extent0.y));
+            continue;
+        }
+
+        size_t size0 = tex.size(0);
+        if (size0 == 0)
+        {
+            Msg("CANARY_FILE name=%s status=INVALID_SIZE size0=%zu",
+                tf.name, size0);
+            if (file_ok)
+                fprintf(f, "CANARY_FILE name=%s status=INVALID_SIZE size0=%zu\n",
+                    tf.name, size0);
+            continue;
+        }
+
+        const void* data0 = tex.data(0, 0, 0);
+        if (data0 == nullptr)
+        {
+            Msg("CANARY_FILE name=%s status=NULL_DATA size0=%zu",
+                tf.name, size0);
+            if (file_ok)
+                fprintf(f, "CANARY_FILE name=%s status=NULL_DATA size0=%zu\n",
+                    tf.name, size0);
             continue;
         }
 
         gli::gl GL(gli::gl::PROFILE_ES30);
         gli::gl::format const fmt = GL.translate(tex.format(), tex.swizzles());
 
-        Msg("CANARY_TRANSLATE name=%s internal=0x%X external=0x%X type=0x%X",
+        Msg("CANARY_TRANSLATE name=%s format=%d internal=0x%X external=0x%X type=0x%X",
             tf.name,
+            static_cast<int>(tex.format()),
             static_cast<unsigned int>(fmt.Internal),
             static_cast<unsigned int>(fmt.External),
             static_cast<unsigned int>(fmt.Type));
 
         if (file_ok)
         {
-            fprintf(f, "CANARY_TRANSLATE name=%s internal=0x%X external=0x%X type=0x%X\n",
+            fprintf(f, "CANARY_TRANSLATE name=%s format=%d internal=0x%X external=0x%X type=0x%X\n",
                 tf.name,
+                static_cast<int>(tex.format()),
                 static_cast<unsigned int>(fmt.Internal),
                 static_cast<unsigned int>(fmt.External),
                 static_cast<unsigned int>(fmt.Type));
@@ -473,9 +583,11 @@ static void AndroidRunCompressedFileCanaryOnce()
 
         if (fmt.Internal == 0)
         {
-            Msg("! CANARY_TRANSLATE name=%s FAIL internal=0", tf.name);
+            Msg("! CANARY_TRANSLATE name=%s status=INVALID_INTERNAL format=%d",
+                tf.name, static_cast<int>(tex.format()));
             if (file_ok)
-                fprintf(f, "CANARY_TRANSLATE name=%s status=FAIL_INTERNAL_ZERO\n", tf.name);
+                fprintf(f, "CANARY_TRANSLATE name=%s status=INVALID_INTERNAL format=%d\n",
+                    tf.name, static_cast<int>(tex.format()));
             continue;
         }
 
@@ -483,10 +595,10 @@ static void AndroidRunCompressedFileCanaryOnce()
         glGenTextures(1, &texGL);
         if (!texGL)
         {
-            Msg("! CANARY_UPLOAD name=%s fmt=0x%X gen=FAIL err=0x%X",
+            Msg("! CANARY_UPLOAD name=%s internal=0x%X gen=FAIL err=0x%X",
                 tf.name, static_cast<unsigned int>(fmt.Internal), static_cast<unsigned int>(glGetError()));
             if (file_ok)
-                fprintf(f, "CANARY_UPLOAD name=%s fmt=0x%X gen=FAIL\n", tf.name, static_cast<unsigned int>(fmt.Internal));
+                fprintf(f, "CANARY_UPLOAD name=%s internal=0x%X gen=FAIL\n", tf.name, static_cast<unsigned int>(fmt.Internal));
             continue;
         }
 
@@ -496,44 +608,40 @@ static void AndroidRunCompressedFileCanaryOnce()
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-        auto extent = tex.extent(0);
-        size_t imageSize = tex.size(0);
-        const void* data = tex.data(0, 0, 0);
-
         DrGLErrorLocal();
         glCompressedTexImage2D(
             GL_TEXTURE_2D,
             0,
             fmt.Internal,
-            static_cast<GLsizei>(extent.x),
-            static_cast<GLsizei>(extent.y),
+            static_cast<GLsizei>(extent0.x),
+            static_cast<GLsizei>(extent0.y),
             0,
-            static_cast<GLsizei>(imageSize),
-            data);
+            static_cast<GLsizei>(size0),
+            data0);
         GLenum err = glGetError();
 
         bool upload_ok = (err == GL_NO_ERROR);
 
         if (upload_ok)
         {
-            Msg("CANARY_UPLOAD name=%s fmt=0x%X w=%d h=%d size=%zu upload=OK err=0x0",
+            Msg("CANARY_UPLOAD name=%s internal=0x%X w=%d h=%d size=%zu upload=OK err=0x0",
                 tf.name, static_cast<unsigned int>(fmt.Internal),
-                static_cast<int>(extent.x), static_cast<int>(extent.y), imageSize);
+                static_cast<int>(extent0.x), static_cast<int>(extent0.y), size0);
             if (file_ok)
-                fprintf(f, "CANARY_UPLOAD name=%s fmt=0x%X w=%d h=%d size=%zu upload=OK err=0x0\n",
+                fprintf(f, "CANARY_UPLOAD name=%s internal=0x%X w=%d h=%d size=%zu upload=OK err=0x0\n",
                     tf.name, static_cast<unsigned int>(fmt.Internal),
-                    static_cast<int>(extent.x), static_cast<int>(extent.y), imageSize);
+                    static_cast<int>(extent0.x), static_cast<int>(extent0.y), size0);
         }
         else
         {
-            Msg("! CANARY_UPLOAD name=%s fmt=0x%X w=%d h=%d size=%zu upload=FAIL err=0x%X",
+            Msg("! CANARY_UPLOAD name=%s internal=0x%X w=%d h=%d size=%zu upload=FAIL err=0x%X",
                 tf.name, static_cast<unsigned int>(fmt.Internal),
-                static_cast<int>(extent.x), static_cast<int>(extent.y), imageSize,
+                static_cast<int>(extent0.x), static_cast<int>(extent0.y), size0,
                 static_cast<unsigned int>(err));
             if (file_ok)
-                fprintf(f, "CANARY_UPLOAD name=%s fmt=0x%X w=%d h=%d size=%zu upload=FAIL err=0x%X\n",
+                fprintf(f, "CANARY_UPLOAD name=%s internal=0x%X w=%d h=%d size=%zu upload=FAIL err=0x%X\n",
                     tf.name, static_cast<unsigned int>(fmt.Internal),
-                    static_cast<int>(extent.x), static_cast<int>(extent.y), imageSize,
+                    static_cast<int>(extent0.x), static_cast<int>(extent0.y), size0,
                     static_cast<unsigned int>(err));
 
             glDeleteTextures(1, &texGL);
@@ -579,8 +687,8 @@ static void AndroidRunCompressedFileCanaryOnce()
             continue;
         }
 
-        int fbo_w = static_cast<int>(extent.x);
-        int fbo_h = static_cast<int>(extent.y);
+        int fbo_w = static_cast<int>(extent0.x);
+        int fbo_h = static_cast<int>(extent0.y);
         if (fbo_w > 64) fbo_w = 64;
         if (fbo_h > 64) fbo_h = 64;
 
@@ -706,17 +814,27 @@ static void AndroidRunCompressedFileCanaryOnce()
         glActiveTexture(GL_TEXTURE0);
     }
 
+    bool any_valid = (results.etc2_rgb_ktx != -1 || results.etc2_srgb_ktx != -1 || results.astc4_srgb_ktx != -1 ||
+                      results.etc2_rgb_dds != -1 || results.etc2_srgb_dds != -1 || results.astc4_srgb_dds != -1 || results.astc8_dds != -1);
+
     if (file_ok)
     {
-        fprintf(f, "CANARY_SUMMARY: etc2_rgb_dds=%d etc2_rgb_ktx=%d astc4_srgb_dds=%d astc4_srgb_ktx=%d astc8_dds=%d\n",
-            results.etc2_rgb_dds, results.etc2_rgb_ktx, results.astc4_srgb_dds, results.astc4_srgb_ktx, results.astc8_dds);
+        fprintf(f, "CANARY_SUMMARY: etc2_rgb_ktx=%d etc2_srgb_ktx=%d astc4_srgb_ktx=%d etc2_rgb_dds=%d etc2_srgb_dds=%d astc4_srgb_dds=%d astc8_dds=%d\n",
+            results.etc2_rgb_ktx, results.etc2_srgb_ktx, results.astc4_srgb_ktx,
+            results.etc2_rgb_dds, results.etc2_srgb_dds, results.astc4_srgb_dds, results.astc8_dds);
         fprintf(f, "GL-CANARY-COMPRESSED-FILE: done\n");
         fclose(f);
     }
 
-    Msg("* CANARY_SUMMARY: etc2_rgb_dds=%d etc2_rgb_ktx=%d astc4_srgb_dds=%d astc4_srgb_ktx=%d astc8_dds=%d",
-        results.etc2_rgb_dds, results.etc2_rgb_ktx, results.astc4_srgb_dds, results.astc4_srgb_ktx, results.astc8_dds);
+    Msg("* CANARY_SUMMARY: etc2_rgb_ktx=%d etc2_srgb_ktx=%d astc4_srgb_ktx=%d etc2_rgb_dds=%d etc2_srgb_dds=%d astc4_srgb_dds=%d astc8_dds=%d",
+        results.etc2_rgb_ktx, results.etc2_srgb_ktx, results.astc4_srgb_ktx,
+        results.etc2_rgb_dds, results.etc2_srgb_dds, results.astc4_srgb_dds, results.astc8_dds);
     Msg("* GL-CANARY-COMPRESSED-FILE: done");
+
+    if (!any_valid)
+    {
+        Msg("! CANARY_SUMMARY: no valid compressed file pipeline tested");
+    }
 }
 } // namespace
 #endif
