@@ -88,7 +88,7 @@ u32 calc_texture_size(int lod, u32 mip_cnt, size_t orig_size)
 
 
 #if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
-// FULL-MIP ASTC direct
+// MIP-CUT ASTC direct
 static GLuint RGL_TextureLoadCompressedDirectAndroid(
     pcstr fn,
     const gli::texture& texture,
@@ -108,7 +108,7 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
     if (!gli::is_compressed(texture.format()))
         return 0;
 
-    // Whitlist empírica do canary u0_a564 e do loader real u0_a565:
+    // Whitlist empírica do canary u0_a564 e do loader real u0_a565/u0_a566:
     // 157 = ASTC 4x4 UNORM_BLOCK
     // 158 = ASTC 4x4 SRGB_BLOCK
     const int fmt_id = static_cast<int>(texture.format());
@@ -122,10 +122,43 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
     if (base_ext.x == 0 || base_ext.y == 0)
         return 0;
 
-    // Ainda sem mip-cut comprimido.
-    // Se a textura base passar do tex_max, cai no caminho antigo com segurança.
     const int max_dim = static_cast<int>(psTextureMax);
-    if (max_dim > 0 && (static_cast<int>(base_ext.x) > max_dim || static_cast<int>(base_ext.y) > max_dim))
+
+    // Escolhe o primeiro level que cabe em psTextureMax.
+    // Se max_dim <= 0, não corta.
+    size_t start_level = 0;
+    while (start_level + 1 < texture.levels())
+    {
+        const auto ext = texture.extent(start_level);
+        if (max_dim <= 0 ||
+            (static_cast<int>(ext.x) <= max_dim && static_cast<int>(ext.y) <= max_dim))
+        {
+            break;
+        }
+        ++start_level;
+    }
+
+    const auto first_ext = texture.extent(start_level);
+    int cut_w = static_cast<int>(first_ext.x);
+    int cut_h = static_cast<int>(first_ext.y);
+
+    if (cut_w <= 0 || cut_h <= 0)
+        return 0;
+
+    // Se mesmo o último level não couber, fallback seguro para o caminho antigo.
+    if (max_dim > 0 && (cut_w > max_dim || cut_h > max_dim))
+    {
+        start_level = texture.levels() - 1;
+        const auto last_ext = texture.extent(start_level);
+        cut_w = static_cast<int>(last_ext.x);
+        cut_h = static_cast<int>(last_ext.y);
+
+        if (cut_w <= 0 || cut_h <= 0 || cut_w > max_dim || cut_h > max_dim)
+            return 0;
+    }
+
+    const size_t out_levels = texture.levels() - start_level;
+    if (out_levels == 0)
         return 0;
 
     gli::gl GL(gli::gl::PROFILE_ES30);
@@ -171,7 +204,7 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
 
     glBindTexture(GL_TEXTURE_2D, tex);
 
-    const GLenum min_filter = (texture.levels() > 1)
+    const GLenum min_filter = (out_levels > 1)
         ? GL_LINEAR_MIPMAP_LINEAR
         : GL_LINEAR;
 
@@ -181,13 +214,16 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL,
-                    static_cast<GLint>(texture.levels() - 1));
+                    static_cast<GLint>(out_levels - 1));
 
-    for (size_t level = 0; level < texture.levels(); ++level)
+    size_t loaded_size = 0;
+
+    for (size_t dest_level = 0; dest_level < out_levels; ++dest_level)
     {
-        const auto ext = texture.extent(level);
-        const size_t level_size = texture.size(level);
-        const void* level_data = texture.data(0, 0, level);
+        const size_t src_level = start_level + dest_level;
+        const auto ext = texture.extent(src_level);
+        const size_t level_size = texture.size(src_level);
+        const void* level_data = texture.data(0, 0, src_level);
 
         if (ext.x == 0 || ext.y == 0 || level_size == 0 || level_data == nullptr)
         {
@@ -199,7 +235,7 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
         // glCompressedTexImage2D, 8 argumentos, sem xoffset/yoffset.
         glCompressedTexImage2D(
             GL_TEXTURE_2D,
-            static_cast<GLint>(level),
+            static_cast<GLint>(dest_level),
             fmt.Internal,
             static_cast<GLsizei>(ext.x),
             static_cast<GLsizei>(ext.y),
@@ -210,38 +246,42 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
         const GLenum err = glGetError();
         if (err != GL_NO_ERROR)
         {
-            Msg("! TEXTURE-COMPRESSED-DIRECT FULL-MIP name=%s upload=FAIL internal=0x%X level=%d err=0x%X",
+            Msg("! TEXTURE-COMPRESSED-DIRECT MIP-CUT name=%s upload=FAIL internal=0x%X dest_level=%d src_level=%d err=0x%X",
                 fn,
                 static_cast<unsigned int>(fmt.Internal),
-                static_cast<int>(level),
+                static_cast<int>(dest_level),
+                static_cast<int>(src_level),
                 static_cast<unsigned int>(err));
 
             glDeleteTextures(1, &tex);
             return 0;
         }
+
+        loaded_size += level_size;
     }
 
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    const size_t total_size = texture.size();
-
-    ret_msize = static_cast<u32>(total_size);
+    ret_msize = static_cast<u32>(loaded_size);
     ret_desc = static_cast<GLenum>(fmt.Internal);
-    ret_width = static_cast<u32>(base_ext.x);
-    ret_height = static_cast<u32>(base_ext.y);
+    ret_width = static_cast<u32>(cut_w);
+    ret_height = static_cast<u32>(cut_h);
 
     if (!s_logged)
     {
-        Msg("* TEXTURE-COMPRESSED-DIRECT FULL-MIP name=%s target=%d format=%d internal=0x%X w=%u h=%u levels_total=%u mips_loaded=%u size_kb=%lu",
+        Msg("* TEXTURE-COMPRESSED-DIRECT MIP-CUT name=%s target=%d format=%d internal=0x%X base=%dx%d cut=%dx%d levels_total=%u out_levels=%u start_level=%u size_kb=%lu",
             fn,
             static_cast<int>(texture.target()),
             fmt_id,
             static_cast<unsigned int>(fmt.Internal),
-            static_cast<unsigned int>(ret_width),
-            static_cast<unsigned int>(ret_height),
+            static_cast<unsigned int>(base_ext.x),
+            static_cast<unsigned int>(base_ext.y),
+            static_cast<unsigned int>(cut_w),
+            static_cast<unsigned int>(cut_h),
             static_cast<unsigned int>(texture.levels()),
-            static_cast<unsigned int>(texture.levels()),
-            static_cast<unsigned long>(total_size / 1024));
+            static_cast<unsigned int>(out_levels),
+            static_cast<unsigned int>(start_level),
+            static_cast<unsigned long>(loaded_size / 1024));
         s_logged = true;
     }
 
