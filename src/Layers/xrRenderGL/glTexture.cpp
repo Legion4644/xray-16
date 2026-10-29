@@ -97,7 +97,9 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
     u32& ret_width,
     u32& ret_height)
 {
-    static bool s_logged = false;
+    static unsigned long s_log_count = 0;
+    static unsigned long s_total_textures = 0;
+    static unsigned long s_total_bytes = 0;
 
     if (texture.empty())
         return 0;
@@ -267,9 +269,14 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
     ret_width = static_cast<u32>(cut_w);
     ret_height = static_cast<u32>(cut_h);
 
-    if (!s_logged)
+    ++s_total_textures;
+    s_total_bytes += static_cast<unsigned long>(loaded_size);
+
+    if (s_log_count < 50)
     {
-        Msg("* TEXTURE-COMPRESSED-DIRECT MIP-CUT name=%s target=%d format=%d internal=0x%X base=%dx%d cut=%dx%d levels_total=%u out_levels=%u start_level=%u size_kb=%lu",
+        ++s_log_count;
+        Msg("* TEXTURE-COMPRESSED-DIRECT MIP-CUT [%lu/50] name=%s target=%d format=%d internal=0x%X base=%dx%d cut=%dx%d levels_total=%u out_levels=%u start_level=%u size_kb=%lu total_textures=%lu total_mb=%lu",
+            s_log_count,
             fn,
             static_cast<int>(texture.target()),
             fmt_id,
@@ -281,8 +288,9 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
             static_cast<unsigned int>(texture.levels()),
             static_cast<unsigned int>(out_levels),
             static_cast<unsigned int>(start_level),
-            static_cast<unsigned long>(loaded_size / 1024));
-        s_logged = true;
+            static_cast<unsigned long>(loaded_size / 1024),
+            s_total_textures,
+            static_cast<unsigned long>(s_total_bytes / (1024UL * 1024UL)));
     }
 
     return tex;
