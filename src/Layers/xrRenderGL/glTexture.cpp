@@ -88,6 +88,7 @@ u32 calc_texture_size(int lod, u32 mip_cnt, size_t orig_size)
 
 
 #if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+// FULL-MIP ASTC direct
 static GLuint RGL_TextureLoadCompressedDirectAndroid(
     pcstr fn,
     const gli::texture& texture,
@@ -107,7 +108,7 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
     if (!gli::is_compressed(texture.format()))
         return 0;
 
-    // Whitlist empírica do canary u0_a564:
+    // Whitlist empírica do canary u0_a564 e do loader real u0_a565:
     // 157 = ASTC 4x4 UNORM_BLOCK
     // 158 = ASTC 4x4 SRGB_BLOCK
     const int fmt_id = static_cast<int>(texture.format());
@@ -121,7 +122,7 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
     if (base_ext.x == 0 || base_ext.y == 0)
         return 0;
 
-    // Neste primeiro patch não fazemos mip-cut comprimido.
+    // Ainda sem mip-cut comprimido.
     // Se a textura base passar do tex_max, cai no caminho antigo com segurança.
     const int max_dim = static_cast<int>(psTextureMax);
     if (max_dim > 0 && (static_cast<int>(base_ext.x) > max_dim || static_cast<int>(base_ext.y) > max_dim))
@@ -170,57 +171,68 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
 
     glBindTexture(GL_TEXTURE_2D, tex);
 
-    // Base-mip-only para o primeiro canary no loader.
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    const GLenum min_filter = (texture.levels() > 1)
+        ? GL_LINEAR_MIPMAP_LINEAR
+        : GL_LINEAR;
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL,
+                    static_cast<GLint>(texture.levels() - 1));
 
-    const size_t level_size = texture.size(0);
-    const void* level_data = texture.data(0, 0, 0);
-
-    if (level_size == 0 || level_data == nullptr)
+    for (size_t level = 0; level < texture.levels(); ++level)
     {
-        glDeleteTextures(1, &tex);
-        return 0;
-    }
+        const auto ext = texture.extent(level);
+        const size_t level_size = texture.size(level);
+        const void* level_data = texture.data(0, 0, level);
 
-    // Caminho provado pelo canary:
-    // glCompressedTexImage2D, 8 argumentos, sem xoffset/yoffset.
-    glCompressedTexImage2D(
-        GL_TEXTURE_2D,
-        0,
-        fmt.Internal,
-        static_cast<GLsizei>(base_ext.x),
-        static_cast<GLsizei>(base_ext.y),
-        0,
-        static_cast<GLsizei>(level_size),
-        level_data);
+        if (ext.x == 0 || ext.y == 0 || level_size == 0 || level_data == nullptr)
+        {
+            glDeleteTextures(1, &tex);
+            return 0;
+        }
 
-    const GLenum err = glGetError();
-    if (err != GL_NO_ERROR)
-    {
-        Msg("! TEXTURE-COMPRESSED-DIRECT name=%s upload=FAIL internal=0x%X level=0 err=0x%X",
-            fn,
-            static_cast<unsigned int>(fmt.Internal),
-            static_cast<unsigned int>(err));
+        // Caminho provado pelo canary e pelo loader real:
+        // glCompressedTexImage2D, 8 argumentos, sem xoffset/yoffset.
+        glCompressedTexImage2D(
+            GL_TEXTURE_2D,
+            static_cast<GLint>(level),
+            fmt.Internal,
+            static_cast<GLsizei>(ext.x),
+            static_cast<GLsizei>(ext.y),
+            0,
+            static_cast<GLsizei>(level_size),
+            level_data);
 
-        glDeleteTextures(1, &tex);
-        return 0;
+        const GLenum err = glGetError();
+        if (err != GL_NO_ERROR)
+        {
+            Msg("! TEXTURE-COMPRESSED-DIRECT FULL-MIP name=%s upload=FAIL internal=0x%X level=%d err=0x%X",
+                fn,
+                static_cast<unsigned int>(fmt.Internal),
+                static_cast<int>(level),
+                static_cast<unsigned int>(err));
+
+            glDeleteTextures(1, &tex);
+            return 0;
+        }
     }
 
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    ret_msize = static_cast<u32>(level_size);
+    const size_t total_size = texture.size();
+
+    ret_msize = static_cast<u32>(total_size);
     ret_desc = static_cast<GLenum>(fmt.Internal);
     ret_width = static_cast<u32>(base_ext.x);
     ret_height = static_cast<u32>(base_ext.y);
 
     if (!s_logged)
     {
-        Msg("* TEXTURE-COMPRESSED-DIRECT name=%s target=%d format=%d internal=0x%X w=%u h=%u levels_total=%u mips_loaded=1 size_kb=%lu",
+        Msg("* TEXTURE-COMPRESSED-DIRECT FULL-MIP name=%s target=%d format=%d internal=0x%X w=%u h=%u levels_total=%u mips_loaded=%u size_kb=%lu",
             fn,
             static_cast<int>(texture.target()),
             fmt_id,
@@ -228,7 +240,8 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
             static_cast<unsigned int>(ret_width),
             static_cast<unsigned int>(ret_height),
             static_cast<unsigned int>(texture.levels()),
-            static_cast<unsigned long>(level_size / 1024));
+            static_cast<unsigned int>(texture.levels()),
+            static_cast<unsigned long>(total_size / 1024));
         s_logged = true;
     }
 
