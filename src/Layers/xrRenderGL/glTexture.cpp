@@ -3,6 +3,7 @@
 //////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
+#include <sys/stat.h>
 #include <cstdlib>
 #include <cstdio>
 #include "xrCore/xrMemory.h"
@@ -481,6 +482,192 @@ static bool RGL_TryLoadAstcCacheAndroid(
 #endif
 
 
+
+#if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+// ASTC-TEX-DUMP
+static const char* RGL_DumpTexListPath()
+{
+    return "/storage/emulated/0/XRay/dump_tex.txt";
+}
+
+static const char* RGL_DumpTexRoot()
+{
+    return "/storage/emulated/0/XRay/extracted";
+}
+
+static bool RGL_DumpTexLineMatches(pcstr fn, pcstr line)
+{
+    if (!line || !line[0])
+        return false;
+
+    if (std::strcmp(line, "ALL") == 0)
+        return true;
+
+    return std::strstr(fn, line) != nullptr;
+}
+
+static bool RGL_DumpTexShouldDump(pcstr fn)
+{
+    std::FILE* f = std::fopen(RGL_DumpTexListPath(), "rb");
+    if (!f)
+        return false;
+
+    char line[1024];
+    bool has_filter = false;
+    bool match = false;
+
+    while (std::fgets(line, sizeof(line), f))
+    {
+        size_t len = std::strlen(line);
+
+        while (len > 0 &&
+               (line[len - 1] == '\n' ||
+                line[len - 1] == '\r' ||
+                line[len - 1] == ' ' ||
+                line[len - 1] == '\t'))
+        {
+            line[--len] = 0;
+        }
+
+        if (len == 0 || line[0] == '#')
+            continue;
+
+        has_filter = true;
+
+        if (RGL_DumpTexLineMatches(fn, line))
+        {
+            match = true;
+            break;
+        }
+    }
+
+    std::fclose(f);
+
+    // Se o arquivo existir mas não tiver filtro útil, não dumpa tudo por acidente.
+    return has_filter && match;
+}
+
+static bool RGL_BuildDumpPath(pcstr fn, char* out, size_t out_size)
+{
+    const char* rel = RGL_FindGamedataRel(fn);
+    if (!rel || !rel[0])
+        return false;
+
+    const char* root = RGL_DumpTexRoot();
+    const size_t root_len = std::strlen(root);
+    const size_t rel_len = std::strlen(rel);
+    const size_t need = root_len + 1 + rel_len + 1;
+
+    if (need > out_size)
+        return false;
+
+    std::memcpy(out, root, root_len);
+    out[root_len] = '/';
+
+    char* dst = out + root_len + 1;
+    for (size_t i = 0; i < rel_len; ++i)
+    {
+        char c = rel[i];
+        dst[i] = RGL_IsSep(c) ? '/' : c;
+    }
+
+    dst[rel_len] = 0;
+    return true;
+}
+
+static void RGL_MkdirsForFileAndroid(const char* filepath)
+{
+    char tmp[1024];
+    const size_t len = std::strlen(filepath);
+
+    if (len == 0 || len >= sizeof(tmp))
+        return;
+
+    std::memcpy(tmp, filepath, len + 1);
+
+    char* last = std::strrchr(tmp, '/');
+    if (!last)
+        return;
+
+    *last = 0;
+
+    for (char* p = tmp + 1; *p; ++p)
+    {
+        if (*p == '/')
+        {
+            *p = 0;
+            ::mkdir(tmp, 0777);
+            *p = '/';
+        }
+    }
+
+    ::mkdir(tmp, 0777);
+}
+
+static void RGL_DumpOriginalTextureAndroid(pcstr fn, IReader* S)
+{
+    if (!S)
+        return;
+
+    if (!RGL_DumpTexShouldDump(fn))
+        return;
+
+    const size_t sz = S->length();
+    if (sz == 0)
+        return;
+
+    // Hard cap para não dumpar lixo gigante por acidente.
+    const size_t max_sz = 128u * 1024u * 1024u;
+    if (sz > max_sz)
+    {
+        Msg("! TEX-DUMP-SKIP too_large original=%s size_kb=%lu",
+            fn,
+            static_cast<unsigned long>(sz / 1024));
+        return;
+    }
+
+    char out_path[1024];
+    if (!RGL_BuildDumpPath(fn, out_path, sizeof(out_path)))
+        return;
+
+    std::FILE* check = std::fopen(out_path, "rb");
+    if (check)
+    {
+        std::fclose(check);
+        return; // já extraído
+    }
+
+    RGL_MkdirsForFileAndroid(out_path);
+
+    std::FILE* out = std::fopen(out_path, "wb");
+    if (!out)
+    {
+        Msg("! TEX-DUMP-FAIL original=%s out=%s", fn, out_path);
+        return;
+    }
+
+    const size_t written = std::fwrite(S->pointer(), 1, sz, out);
+    std::fclose(out);
+
+    if (written != sz)
+    {
+        std::remove(out_path);
+        Msg("! TEX-DUMP-PARTIAL original=%s out=%s written=%zu expected=%zu",
+            fn,
+            out_path,
+            written,
+            sz);
+        return;
+    }
+
+    Msg("* TEX-DUMP original=%s out=%s size_kb=%lu",
+        fn,
+        out_path,
+        static_cast<unsigned long>(sz / 1024));
+}
+#endif
+
+
 GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32& ret_width, u32& ret_height)
 {
     ret_msize = 0;
@@ -577,6 +764,10 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
 
     IReader* S = FS.r_open(fn);
     R_ASSERT2_CURE(S, fn, { return 0; });
+#if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+    RGL_DumpOriginalTextureAndroid(fn, S);
+#endif
+
     size_t img_size = S->length();
 #ifdef DEBUG
     Msg("* Loaded: %s[%d]b", fn, img_size);
