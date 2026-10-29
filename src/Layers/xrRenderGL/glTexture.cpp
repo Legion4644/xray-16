@@ -88,7 +88,7 @@ u32 calc_texture_size(int lod, u32 mip_cnt, size_t orig_size)
 
 
 #if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
-// MIP-CUT ASTC direct
+// MIP-CUT ASTC direct TEST OVERRIDE
 static GLuint RGL_TextureLoadCompressedDirectAndroid(
     pcstr fn,
     const gli::texture& texture,
@@ -108,7 +108,7 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
     if (!gli::is_compressed(texture.format()))
         return 0;
 
-    // Whitlist empírica do canary u0_a564 e do loader real u0_a565/u0_a566:
+    // Whitlist empírica do canary u0_a564 e do loader real u0_a565/u0_a566/u0_a567:
     // 157 = ASTC 4x4 UNORM_BLOCK
     // 158 = ASTC 4x4 SRGB_BLOCK
     const int fmt_id = static_cast<int>(texture.format());
@@ -122,9 +122,23 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
     if (base_ext.x == 0 || base_ext.y == 0)
         return 0;
 
-    const int max_dim = static_cast<int>(psTextureMax);
+    const int real_max_dim = static_cast<int>(psTextureMax);
+    int max_dim = real_max_dim;
+    bool mip_cut_test_override = false;
 
-    // Escolhe o primeiro level que cabe em psTextureMax.
+    // TEMPORARY MIP-CUT CANARY OVERRIDE.
+    // Objetivo: provar start_level > 0 usando a textura ASTC 256x256 já disponível.
+    // Isso força max_dim=128 apenas para o caso base=256x256 quando psTextureMax>=256.
+    // REMOVER depois que o log confirmar mip-cut comprimido funcionando.
+    if (max_dim >= 256 &&
+        static_cast<int>(base_ext.x) == 256 &&
+        static_cast<int>(base_ext.y) == 256)
+    {
+        max_dim = 128;
+        mip_cut_test_override = true;
+    }
+
+    // Escolhe o primeiro level que cabe em max_dim.
     // Se max_dim <= 0, não corta.
     size_t start_level = 0;
     while (start_level + 1 < texture.levels())
@@ -269,7 +283,7 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
 
     if (!s_logged)
     {
-        Msg("* TEXTURE-COMPRESSED-DIRECT MIP-CUT name=%s target=%d format=%d internal=0x%X base=%dx%d cut=%dx%d levels_total=%u out_levels=%u start_level=%u size_kb=%lu",
+        Msg("* TEXTURE-COMPRESSED-DIRECT MIP-CUT name=%s target=%d format=%d internal=0x%X base=%dx%d cut=%dx%d levels_total=%u out_levels=%u start_level=%u real_max=%d max=%d override=%d size_kb=%lu",
             fn,
             static_cast<int>(texture.target()),
             fmt_id,
@@ -281,6 +295,9 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
             static_cast<unsigned int>(texture.levels()),
             static_cast<unsigned int>(out_levels),
             static_cast<unsigned int>(start_level),
+            real_max_dim,
+            max_dim,
+            mip_cut_test_override ? 1 : 0,
             static_cast<unsigned long>(loaded_size / 1024));
         s_logged = true;
     }
