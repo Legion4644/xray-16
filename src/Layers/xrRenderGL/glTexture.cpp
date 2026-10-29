@@ -3,6 +3,8 @@
 //////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
+#include <cstdlib>
+#include <cstdio>
 #include "xrCore/xrMemory.h"
 
 #include <array>
@@ -297,6 +299,188 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
 }
 #endif
 
+
+#if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+// ASTC-CACHE-LOOKUP
+static bool RGL_IsSep(char c)
+{
+    return c == '/' || c == 92; // 92 == backslash
+}
+
+static bool RGL_AstcCacheEnabled()
+{
+    const char* v = std::getenv("XRAY_ASTC_CACHE");
+    return !(v && v[0] == '0');
+}
+
+static const char* RGL_FindGamedataRel(pcstr path)
+{
+    const char* search = path;
+
+    while (search && *search)
+    {
+        const char* p = std::strstr(search, "gamedata");
+        if (!p)
+            break;
+
+        const bool boundary = (p == path) || RGL_IsSep(*(p - 1));
+
+        if (boundary)
+        {
+            p += 8; // strlen("gamedata")
+            if (RGL_IsSep(*p))
+                ++p;
+
+            if (*p)
+                return p;
+        }
+
+        search = p;
+        if (*search)
+            ++search;
+    }
+
+    return nullptr;
+}
+
+static bool RGL_BuildAstcCachePath(pcstr fn, string_path out, size_t out_size)
+{
+    if (!RGL_AstcCacheEnabled())
+        return false;
+
+    const char* rel = RGL_FindGamedataRel(fn);
+    if (!rel || !rel[0])
+        return false;
+
+    const char* root = std::getenv("XRAY_ASTC_CACHE_ROOT");
+    if (!root || !root[0])
+        root = "/storage/emulated/0/XRay/cache/astc";
+
+    const size_t root_len = std::strlen(root);
+    const size_t rel_len = std::strlen(rel);
+
+    const char* dds_ext = ".dds";
+    const size_t dds_len = 4;
+
+    const char* astc_ext = ".astc.dds";
+    const size_t astc_len = 9;
+
+    const bool has_dds =
+        (rel_len >= dds_len && std::strcmp(rel + rel_len - dds_len, dds_ext) == 0);
+
+    const size_t base_rel_len = has_dds ? (rel_len - dds_len) : rel_len;
+
+    const bool root_has_slash = (root_len > 0 && root[root_len - 1] == '/');
+    const size_t sep_len = root_has_slash ? 0 : 1;
+
+    const size_t need = root_len + sep_len + base_rel_len + astc_len + 1;
+    if (need > out_size)
+        return false;
+
+    std::memcpy(out, root, root_len);
+
+    char* dst = out + root_len;
+    if (sep_len)
+    {
+        *dst = '/';
+        ++dst;
+    }
+
+    for (size_t i = 0; i < base_rel_len; ++i)
+    {
+        char c = rel[i];
+        dst[i] = RGL_IsSep(c) ? '/' : c;
+    }
+
+    dst += base_rel_len;
+    std::memcpy(dst, astc_ext, astc_len + 1);
+
+    out[need - 1] = 0;
+    return true;
+}
+
+static bool RGL_TryLoadAstcCacheAndroid(
+    pcstr original_fn,
+    pcstr cache_fn,
+    u32& ret_msize,
+    GLenum& ret_desc,
+    u32& ret_width,
+    u32& ret_height,
+    GLuint& out_tex)
+{
+    out_tex = 0;
+
+    std::FILE* f = std::fopen(cache_fn, "rb");
+    if (!f)
+        return false;
+
+    if (std::fseek(f, 0, SEEK_END) != 0)
+    {
+        std::fclose(f);
+        return false;
+    }
+
+    const long sz_long = std::ftell(f);
+    if (sz_long <= 0)
+    {
+        std::fclose(f);
+        return false;
+    }
+
+    if (std::fseek(f, 0, SEEK_SET) != 0)
+    {
+        std::fclose(f);
+        return false;
+    }
+
+    const size_t sz = static_cast<size_t>(sz_long);
+    xr_vector<u8> buf;
+    buf.resize(sz);
+
+    if (std::fread(buf.data(), 1, sz, f) != sz)
+    {
+        std::fclose(f);
+        return false;
+    }
+
+    std::fclose(f);
+
+    gli::texture texture = gli::load(reinterpret_cast<char*>(buf.data()), sz);
+    if (texture.empty())
+    {
+        Msg("! ASTC-CACHE-FALLBACK original=%s cache=%s reason=empty",
+            original_fn,
+            cache_fn);
+        return false;
+    }
+
+    GLuint tex = RGL_TextureLoadCompressedDirectAndroid(
+        cache_fn,
+        texture,
+        ret_msize,
+        ret_desc,
+        ret_width,
+        ret_height);
+
+    if (tex == 0)
+    {
+        Msg("! ASTC-CACHE-FALLBACK original=%s cache=%s reason=direct_failed",
+            original_fn,
+            cache_fn);
+        return false;
+    }
+
+    Msg("* ASTC-CACHE-HIT original=%s cache=%s size_kb=%lu",
+        original_fn,
+        cache_fn,
+        static_cast<unsigned long>(sz / 1024));
+
+    out_tex = tex;
+    return true;
+}
+#endif
+
+
 GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32& ret_width, u32& ret_height)
 {
     ret_msize = 0;
@@ -353,6 +537,44 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     }
 
     // Load and get header
+#if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+    {
+        string_path cache_fn;
+
+        if (RGL_BuildAstcCachePath(fn, cache_fn, sizeof(cache_fn)))
+        {
+            static bool s_cache_attempt_logged = false;
+            if (!s_cache_attempt_logged)
+            {
+                Msg("* ASTC-CACHE-ATTEMPT original=%s cache=%s", fn, cache_fn);
+                s_cache_attempt_logged = true;
+            }
+
+            GLuint cache_tex = 0;
+            u32 cache_msize = 0;
+            GLenum cache_desc = 0;
+            u32 cache_width = 0;
+            u32 cache_height = 0;
+
+            if (RGL_TryLoadAstcCacheAndroid(
+                    fn,
+                    cache_fn,
+                    cache_msize,
+                    cache_desc,
+                    cache_width,
+                    cache_height,
+                    cache_tex))
+            {
+                ret_msize = cache_msize;
+                ret_desc = cache_desc;
+                ret_width = cache_width;
+                ret_height = cache_height;
+                return cache_tex;
+            }
+        }
+    }
+#endif
+
     IReader* S = FS.r_open(fn);
     R_ASSERT2_CURE(S, fn, { return 0; });
     size_t img_size = S->length();
