@@ -3,6 +3,7 @@
 
 #include "../xrRender/r_constants.h"
 
+// GLES-MONO-SAMPLER-SEQ
 namespace xray::render::RENDER_NAMESPACE
 {
 static class cl_sampler : public R_constant_setup
@@ -33,7 +34,7 @@ BOOL R_constant_table::parse(void* _desc, u32 destination)
     GLint uniformCount;
     CHK_GL(glGetProgramiv(program, GL_ACTIVE_UNIFORMS, &uniformCount));
 
-#ifdef XR_PLATFORM_WEB
+#if defined(XR_PLATFORM_WEB) || defined(XR_PLATFORM_GLES)
     u16 samplerStage = 0;
 #endif
 
@@ -124,7 +125,7 @@ BOOL R_constant_table::parse(void* _desc, u32 destination)
                 C->handler = &binder_sampler;
                 R_constant_load& L = C->samp;
                 if (destination & RC_dest_all)
-#ifdef XR_PLATFORM_WEB
+#if defined(XR_PLATFORM_WEB) || defined(XR_PLATFORM_GLES)
                     L.index = samplerStage;
 #else
                     L.index = r_index;
@@ -141,7 +142,7 @@ BOOL R_constant_table::parse(void* _desc, u32 destination)
                 R_ASSERT(C->type == RC_sampler);
                 R_ASSERT(C->handler == &binder_sampler);
                 R_constant_load& L = C->samp;
-#ifdef XR_PLATFORM_WEB
+#if defined(XR_PLATFORM_WEB) || defined(XR_PLATFORM_GLES)
                 R_ASSERT((destination & RC_dest_all) || L.index == r_index);
 #else
                 R_ASSERT(L.index == r_index);
@@ -150,7 +151,7 @@ BOOL R_constant_table::parse(void* _desc, u32 destination)
                 R_ASSERT(L.location == r_location);
                 R_ASSERT(L.program == program);
             }
-#ifdef XR_PLATFORM_WEB
+#if defined(XR_PLATFORM_WEB) || defined(XR_PLATFORM_GLES)
             ++samplerStage;
 #endif
         }
