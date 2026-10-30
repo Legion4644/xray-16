@@ -3,25 +3,54 @@
 #include "glStateUtils.h"
 #include "../../xrCore/xrCore.h"
 #include <cstdio>
+#include <cerrno>
 
 namespace xray::render::RENDER_NAMESPACE
 {
-IC void CBackend::log_stencil_diag(const char* pt, u32 frame)
+#if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+static bool g_stencil_diag_checked = false;
+static bool g_stencil_diag_enabled = false;
+static bool g_stencil_diag_gate_logged = false;
+static u32 g_stencil_diag_calls = 0;
+#endif
+
+IC void CBackend::log_stencil_diag(const char* pt)
 {
 #if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
-    static bool diag_checked = false;
-    static bool diag_enabled = false;
-    if (!diag_checked)
+    if (!g_stencil_diag_checked)
     {
-        diag_checked = true;
+        g_stencil_diag_checked = true;
         FILE* f = fopen("/storage/emulated/0/XRay/render_diag.txt", "rb");
         if (f)
         {
             fclose(f);
-            diag_enabled = true;
+            g_stencil_diag_enabled = true;
+        }
+        else
+        {
+            int errsv = errno;
+            g_stencil_diag_enabled = false;
         }
     }
-    if (!diag_enabled || frame >= 3)
+
+    if (!g_stencil_diag_gate_logged)
+    {
+        g_stencil_diag_gate_logged = true;
+        if (g_stencil_diag_enabled)
+        {
+            Msg("[STENCILDIAG] gate=1");
+        }
+        else
+        {
+            int errsv = errno;
+            Msg("[STENCILDIAG] gate=0 errno=%d", errsv);
+        }
+    }
+
+    if (!g_stencil_diag_enabled)
+        return;
+
+    if (g_stencil_diag_calls >= 6)
         return;
 
     GLenum err = GL_NO_ERROR;
@@ -53,8 +82,10 @@ IC void CBackend::log_stencil_diag(const char* pt, u32 frame)
     glGetIntegerv(GL_STENCIL_WRITEMASK, &wmask);
     err = glGetError();
 
-    Msg("[STENCILDIAG] pt=%s frame=%u fbStatus=0x%X depthObj=%d depthSize=%d stencilObj=%d stencilSize=%d stTest=%d func=0x%X ref=%d mask=0x%X wmask=0x%X err=0x%X",
-        pt, frame, fbStatus, depthObj, depthSize, stencilObj, stencilSize, stTest, func, ref, mask, wmask, err);
+    Msg("[STENCILDIAG] pt=%s call=%u fbStatus=0x%X depthObj=%d depthSize=%d stencilObj=%d stencilSize=%d stTest=%d func=0x%X ref=%d mask=0x%X wmask=0x%X err=0x%X",
+        pt, g_stencil_diag_calls, fbStatus, depthObj, depthSize, stencilObj, stencilSize, stTest, func, ref, mask, wmask, err);
+
+    g_stencil_diag_calls++;
 #endif
 }
 

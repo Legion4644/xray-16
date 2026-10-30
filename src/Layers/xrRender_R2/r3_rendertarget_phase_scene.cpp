@@ -49,7 +49,7 @@ void CRenderTarget::phase_scene_prepare()
     m_bHasActiveVolumetric = false;
     //	Clear later if try to draw volumetric
 
-    RCache.log_stencil_diag("P1", Device.dwFrame);
+    RCache.log_stencil_diag("P1");
 }
 
 // begin
