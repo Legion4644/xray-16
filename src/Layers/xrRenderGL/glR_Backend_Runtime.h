@@ -1,9 +1,63 @@
 #pragma once
 
 #include "glStateUtils.h"
+#include "../../xrCore/xrCore.h"
+#include <cstdio>
 
 namespace xray::render::RENDER_NAMESPACE
 {
+IC void CBackend::log_stencil_diag(const char* pt, u32 frame)
+{
+#if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+    static bool diag_checked = false;
+    static bool diag_enabled = false;
+    if (!diag_checked)
+    {
+        diag_checked = true;
+        FILE* f = fopen("/storage/emulated/0/XRay/render_diag.txt", "rb");
+        if (f)
+        {
+            fclose(f);
+            diag_enabled = true;
+        }
+    }
+    if (!diag_enabled || frame >= 3)
+        return;
+
+    GLenum err = GL_NO_ERROR;
+    GLenum fbStatus = 0;
+    GLint depthObj = 0, depthSize = 0;
+    GLint stencilObj = 0, stencilSize = 0;
+    GLint stTest = 0, func = 0, ref = 0, mask = 0, wmask = 0;
+
+    fbStatus = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
+    err = glGetError();
+
+    glGetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &depthObj);
+    err = glGetError();
+    glGetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_DEPTH_SIZE, &depthSize);
+    err = glGetError();
+    glGetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &stencilObj);
+    err = glGetError();
+    glGetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_STENCIL_SIZE, &stencilSize);
+    err = glGetError();
+
+    glGetIntegerv(GL_STENCIL_TEST, &stTest);
+    err = glGetError();
+    glGetIntegerv(GL_STENCIL_FUNC, &func);
+    err = glGetError();
+    glGetIntegerv(GL_STENCIL_REF, &ref);
+    err = glGetError();
+    glGetIntegerv(GL_STENCIL_VALUE_MASK, &mask);
+    err = glGetError();
+    glGetIntegerv(GL_STENCIL_WRITEMASK, &wmask);
+    err = glGetError();
+
+    Msg("[STENCILDIAG] pt=%s frame=%u fbStatus=0x%X depthObj=%d depthSize=%d stencilObj=%d stencilSize=%d stTest=%d func=0x%X ref=%d mask=0x%X wmask=0x%X err=0x%X",
+        pt, frame, fbStatus, depthObj, depthSize, stencilObj, stencilSize, stTest, func, ref, mask, wmask, err);
+#endif
+}
+
 IC void CBackend::set_xform(u32 ID, const Fmatrix& M)
 {
     stat.xforms++;
@@ -479,6 +533,24 @@ IC void CBackend::SetViewport(const D3D_VIEWPORT& viewport) const
 IC void CBackend::set_Stencil(u32 _enable, u32 _func, u32 _ref, u32 _mask, u32 _writemask, u32 _fail, u32 _pass,
                               u32 _zfail)
 {
+    static bool no_stencil_checked = false;
+    static bool no_stencil = false;
+    if (!no_stencil_checked)
+    {
+        no_stencil = strstr(Core.Params, "-no_stencil") != nullptr;
+        no_stencil_checked = true;
+        if (no_stencil)
+        {
+            Msg("[STENCILDIAG] no_stencil_flag=1");
+        }
+    }
+
+    if (no_stencil && _enable)
+    {
+        glDisable(GL_STENCIL_TEST);
+        return;
+    }
+
 #ifdef XR_PLATFORM_WEB
     if (stencil_enable != _enable)
     {

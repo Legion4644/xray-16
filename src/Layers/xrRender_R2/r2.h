@@ -263,6 +263,8 @@ public:
 
         u32 support_rt_arrays : 1;
 
+        u32 no_stencil : 1;
+
         float forcegloss_v;
     } o;
 

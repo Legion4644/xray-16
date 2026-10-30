@@ -448,6 +448,7 @@ public:
     IC void set_Stencil(u32 _enable, u32 _func = D3DCMP_ALWAYS, u32 _ref = 0x00, u32 _mask = 0x00,
                         u32 _writemask = 0x00, u32 _fail = D3DSTENCILOP_KEEP, u32 _pass = D3DSTENCILOP_KEEP,
                         u32 _zfail = D3DSTENCILOP_KEEP);
+    IC void log_stencil_diag(const char* pt, u32 frame);
     IC void set_Z(u32 _enable);
     IC void set_ZFunc(u32 _func);
 #ifdef XR_PLATFORM_WEB

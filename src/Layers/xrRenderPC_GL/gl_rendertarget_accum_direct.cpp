@@ -692,6 +692,7 @@ void CRenderTarget::accum_direct_cascade(CBackend& cmd_list, u32 sub_phase, Fmat
 void CRenderTarget::accum_direct_blend(CBackend& cmd_list)
 {
     PIX_EVENT(accum_direct_blend);
+    cmd_list.log_stencil_diag("P2", Device.dwFrame);
     // blend-copy
     if (!RImplementation.o.fp16_blend)
     {
