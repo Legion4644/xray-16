@@ -1087,12 +1087,28 @@ class CGlesStubRendererModule final : public RendererModule
 {
 public:
     // Must return a reference to persistent storage; EngineAPI.cpp keeps the reference.
+    // GLES-STUB-GATED
     const xr_vector<std::pair<pcstr, int>>& ObtainSupportedModes() override
     {
         static xr_vector<std::pair<pcstr, int>> modes;
-        if (modes.empty())
-            modes.emplace_back(kRendererMode, 0);
+        if (!modes.empty())
+            return modes;
 
+        bool allow_stub = false;
+        std::FILE* f = std::fopen("/storage/emulated/0/XRay/enable_gles_stub.txt", "rb");
+        if (f)
+        {
+            std::fclose(f);
+            allow_stub = true;
+        }
+
+        if (!allow_stub)
+        {
+            Msg("[GLES-STUB] ObtainSupportedModes -> disabled (create /storage/emulated/0/XRay/enable_gles_stub.txt to allow)");
+            return modes;
+        }
+
+        modes.emplace_back(kRendererMode, 0);
         Msg("[GLES-STUB] ObtainSupportedModes -> %s", kRendererMode);
         return modes;
     }
