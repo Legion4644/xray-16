@@ -50,6 +50,7 @@ void CRenderTarget::phase_scene_prepare()
     //	Clear later if try to draw volumetric
 
     RCache.log_stencil_diag("P1");
+    RCache.log_env_diag();
 }
 
 // begin

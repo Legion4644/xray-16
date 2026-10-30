@@ -449,6 +449,7 @@ public:
                         u32 _writemask = 0x00, u32 _fail = D3DSTENCILOP_KEEP, u32 _pass = D3DSTENCILOP_KEEP,
                         u32 _zfail = D3DSTENCILOP_KEEP);
     IC void log_stencil_diag(const char* pt);
+    IC void log_env_diag();
     IC void set_Z(u32 _enable);
     IC void set_ZFunc(u32 _func);
 #ifdef XR_PLATFORM_WEB

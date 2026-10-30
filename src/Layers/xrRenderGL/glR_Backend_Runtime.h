@@ -4,6 +4,13 @@
 #include "../../xrCore/xrCore.h"
 #include <cstdio>
 #include <cerrno>
+#include "xrEngine/Environment.h"
+#include "xrGame/Actor.h"
+#include "xrGame/Torch.h"
+#include "xrServerEntities/smart_cast.h"
+#include "xrServerEntities/inventory_space.h"
+#include "xrGame/InventoryOwner.h"
+#include "xrGame/Inventory.h"
 
 namespace xray::render::RENDER_NAMESPACE
 {
@@ -12,6 +19,11 @@ static bool g_stencil_diag_checked = false;
 static bool g_stencil_diag_enabled = false;
 static bool g_stencil_diag_gate_logged = false;
 static u32 g_stencil_diag_calls = 0;
+
+static bool g_env_diag_checked = false;
+static bool g_env_diag_enabled = false;
+static bool g_env_diag_gate_logged = false;
+static u32 g_env_diag_calls = 0;
 #endif
 
 IC void CBackend::log_stencil_diag(const char* pt)
@@ -86,6 +98,101 @@ IC void CBackend::log_stencil_diag(const char* pt)
         pt, g_stencil_diag_calls, fbStatus, depthObj, depthSize, stencilObj, stencilSize, stTest, func, ref, mask, wmask, err);
 
     g_stencil_diag_calls++;
+#endif
+}
+
+IC void CBackend::log_env_diag()
+{
+#if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+    if (!g_env_diag_checked)
+    {
+        g_env_diag_checked = true;
+        FILE* f = fopen("/storage/emulated/0/XRay/render_diag.txt", "rb");
+        if (f)
+        {
+            fclose(f);
+            g_env_diag_enabled = true;
+        }
+        else
+        {
+            g_env_diag_enabled = false;
+        }
+    }
+
+    if (!g_env_diag_gate_logged)
+    {
+        g_env_diag_gate_logged = true;
+        if (g_env_diag_enabled)
+        {
+            Msg("[ENVDIAG] gate=1");
+        }
+        else
+        {
+            Msg("[ENVDIAG] gate=0");
+        }
+    }
+
+    if (!g_env_diag_enabled)
+        return;
+
+    g_env_diag_calls++;
+    u32 call_num = g_env_diag_calls;
+
+    // Only sample at specific calls: 1, 60, 300
+    if (!(call_num == 1 || call_num == 60 || call_num == 300))
+        return;
+
+    // Validate environment pointer
+    bool env_ptr_valid = false;
+    const CEnvDescriptorMixer* env_desc = nullptr;
+    float game_time = -1.0f;
+    const char* weather_name = "n/a";
+    bool lantern_active = false;
+
+    if (g_pGamePersistent)
+    {
+        CEnvironment& env = g_pGamePersistent->Environment();
+        env_desc = &env.CurrentEnv;
+        env_ptr_valid = true;
+
+        game_time = env.GetGameTime();
+        weather_name = env.GetWeather().c_str();
+
+        // Check actor lantern/torch
+        CActor* actor = Actor();
+        if (actor)
+        {
+            CTorch* torch = smart_cast<CTorch*>(actor->inventory().ItemFromSlot(TORCH_SLOT));
+            if (torch)
+            {
+                lantern_active = torch->torch_active();
+            }
+        }
+    }
+
+    // Log the environment data
+    if (env_ptr_valid && env_desc)
+    {
+        Fvector3 sun = env_desc->sun_color;
+        Fvector3 amb = env_desc->ambient;
+        Fvector4 hemi = env_desc->hemi_color;
+        Fvector3 sky = env_desc->sky_color;
+        Fvector3 fog = env_desc->fog_color;
+
+        Msg("[ENVDIAG] call=%u time=%.3f weather=%s sun=(%.3f,%.3f,%.3f) amb=(%.3f,%.3f,%.3f) hemi=(%.3f,%.3f,%.3f,%.3f) sky=(%.3f,%.3f,%.3f) fog=(%.3f,%.3f,%.3f) env_ptr_valid=1 lantern=%d",
+            call_num, game_time, weather_name,
+            sun.x, sun.y, sun.z,
+            amb.x, amb.y, amb.z,
+            hemi.x, hemi.y, hemi.z, hemi.w,
+            sky.x, sky.y, sky.z,
+            fog.x, fog.y, fog.z,
+            lantern_active ? 1 : 0);
+    }
+    else
+    {
+        Msg("[ENVDIAG] call=%u time=%.3f weather=%s sun=(n/a) amb=(n/a) hemi=(n/a) sky=(n/a) fog=(n/a) env_ptr_valid=0 lantern=%d",
+            call_num, game_time, weather_name, lantern_active ? 1 : 0);
+    }
 #endif
 }
 

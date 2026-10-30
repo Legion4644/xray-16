@@ -693,6 +693,7 @@ void CRenderTarget::accum_direct_blend(CBackend& cmd_list)
 {
     PIX_EVENT(accum_direct_blend);
     cmd_list.log_stencil_diag("P2");
+    cmd_list.log_env_diag();
     // blend-copy
     if (!RImplementation.o.fp16_blend)
     {
