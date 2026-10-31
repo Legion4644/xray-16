@@ -11,6 +11,8 @@
 #include <array>
 #include <string>
 #include <cstring>
+#include <unordered_set>
+#include <algorithm>
 
 #include <malloc.h>
 #if defined(USE_MIMALLOC)
@@ -775,6 +777,10 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     gli::texture texture = gli::load((char*)S->pointer(), img_size);
     R_ASSERT2(!texture.empty(), fn);
 
+    // Save original format before any GLES conversion for diagnostic
+    const gli::format original_format = texture.format();
+    const bool original_compressed = gli::is_compressed(original_format);
+
 #if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
     {
         GLuint direct_tex = RGL_TextureLoadCompressedDirectAndroid(
@@ -998,6 +1004,77 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     if (gli::gl::EXTERNAL_RED != format.External) // skip for proper greyscale-alpha font textures
         glTexParameteriv(target, GL_TEXTURE_SWIZZLE_RGBA, &format.Swizzles[gli::SWIZZLE_RED]);
     const auto texels = [&](size_t layer, size_t face, size_t level) { return texture.data(layer, face, level); };
+#endif
+
+#if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+    // NORMDIAG: observe swapRedBlue/format on terrain/normal uploads
+    {
+        // Check if filename indicates terrain/normal/lightmap
+        std::string lower_fn(fn);
+        std::transform(lower_fn.begin(), lower_fn.end(), lower_fn.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+
+        const bool is_terrain_normal = lower_fn.find("terrain") != std::string::npos ||
+                                       lower_fn.find("lods_nm") != std::string::npos ||
+                                       lower_fn.find("_nm") != std::string::npos ||
+                                       lower_fn.find("normal") != std::string::npos ||
+                                       lower_fn.find("lmap") != std::string::npos ||
+                                       lower_fn.find("lightmap") != std::string::npos;
+
+        if (is_terrain_normal)
+        {
+            // Gate: only log when render_diag.txt exists
+            static bool s_diag_checked = false;
+            static bool s_diag_enabled = false;
+            if (!s_diag_checked)
+            {
+                s_diag_checked = true;
+                FILE* f = fopen("/storage/emulated/0/XRay/render_diag.txt", "rb");
+                if (f)
+                {
+                    fclose(f);
+                    s_diag_enabled = true;
+                }
+                else
+                {
+                    s_diag_enabled = false;
+                }
+            }
+
+            if (s_diag_enabled)
+            {
+                // Log once per texture name
+                static std::unordered_set<std::string> s_logged_names;
+                if (s_logged_names.insert(lower_fn).second)
+                {
+                    // fmtPre: original format before conversion
+                    // fmtPost: current format after conversion (what we're uploading)
+                    int fmtPre = static_cast<int>(original_format);
+                    int fmtPost = static_cast<int>(texture.format());
+                    int target_val = static_cast<int>(texture.target());
+                    int faces = static_cast<int>(texture.faces());
+                    int layers = static_cast<int>(texture.layers());
+                    int levels = static_cast<int>(texture.levels());
+                    int compressedOrig = original_compressed ? 1 : 0;
+
+                    auto ext = texture.extent();
+                    Msg("[NORMDIAG] tex=%s swapRB=%d fmtPost=0x%X fmtPre=0x%X target=%d ext=%dx%dx%d faces=%d layers=%d levels=%d compressedOrig=%d",
+                        fn,
+                        swapRedBlue ? 1 : 0,
+                        fmtPost,
+                        fmtPre,
+                        target_val,
+                        static_cast<int>(ext.x),
+                        static_cast<int>(ext.y),
+                        static_cast<int>(ext.z),
+                        faces,
+                        layers,
+                        levels,
+                        compressedOrig);
+                }
+            }
+        }
+    }
 #endif
 
     glm::tvec3<GLsizei> const tex_extent(texture.extent());
