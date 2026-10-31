@@ -845,6 +845,20 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
             }
             #endif
         }
+        else if (texture.target() == gli::TARGET_CUBE)
+        {
+            gli::texture_cube src(texture);
+            gli::texture_cube dst = gli::convert(src, gli::FORMAT_RGBA8_UNORM_PACK8);
+            if (!dst.empty())
+                converted = dst;
+        }
+        else if (texture.target() == gli::TARGET_3D)
+        {
+            gli::texture3d src(texture);
+            gli::texture3d dst = gli::convert(src, gli::FORMAT_RGBA8_UNORM_PACK8);
+            if (!dst.empty())
+                converted = dst;
+        }
         if (!converted.empty())
         {
             dxt_converted = true;
@@ -902,8 +916,23 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
         }
         else
         {
-            Msg("! GLES: compressed texture convert failed, using 1x1 RGBA8: %s", fn);
-            texture = gli::texture(gli::TARGET_2D, gli::FORMAT_RGBA8_UNORM_PACK8, gli::extent3d(1, 1, 1), 1, 1, 1);
+            gli::target fallback_target = texture.target();
+            if (fallback_target != gli::TARGET_2D && fallback_target != gli::TARGET_CUBE && fallback_target != gli::TARGET_3D)
+                fallback_target = gli::TARGET_2D;
+            
+            Msg("! GLES: compressed texture convert failed, using 1x1 RGBA8 (target=%d): %s", fallback_target, fn);
+            if (fallback_target == gli::TARGET_CUBE)
+            {
+                texture = gli::texture(gli::TARGET_CUBE, gli::FORMAT_RGBA8_UNORM_PACK8, gli::extent3d(1, 1, 1), 1, 6, 1);
+            }
+            else if (fallback_target == gli::TARGET_3D)
+            {
+                texture = gli::texture(gli::TARGET_3D, gli::FORMAT_RGBA8_UNORM_PACK8, gli::extent3d(1, 1, 1), 1, 1, 1);
+            }
+            else
+            {
+                texture = gli::texture(gli::TARGET_2D, gli::FORMAT_RGBA8_UNORM_PACK8, gli::extent3d(1, 1, 1), 1, 1, 1);
+            }
             const glm::u8vec4 pixel(255, 0, 255, 255);
             memcpy(texture.data(), &pixel, sizeof(pixel));
         }
