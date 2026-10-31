@@ -456,6 +456,10 @@ IC void CBackend::log_stencil_diag(const char* pt, u32 frame)
     (void)frame;
 }
 
+IC void CBackend::log_env_diag()
+{
+}
+
 IC void CBackend::set_Z(u32 _enable)
 {
     StateManager.SetDepthEnable(_enable);

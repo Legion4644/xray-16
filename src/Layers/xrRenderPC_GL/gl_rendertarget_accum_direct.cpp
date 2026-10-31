@@ -1273,4 +1273,63 @@ void CRenderTarget::accum_direct_volumetric(u32 sub_phase, const u32 Offset, con
         //		u_DBT_disable	();
     }
 }
+
+#if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+void xr_gl_log_env_diag_impl()
+{
+    static bool checked = false;
+    static bool enabled = false;
+    static bool gate_logged = false;
+    static u32 calls = 0;
+
+    if (!checked)
+    {
+        checked = true;
+        FILE* f = fopen("/storage/emulated/0/XRay/render_diag.txt", "rb");
+        if (f)
+        {
+            fclose(f);
+            enabled = true;
+        }
+        else
+        {
+            enabled = false;
+        }
+    }
+
+    if (!gate_logged)
+    {
+        gate_logged = true;
+        if (enabled)
+            Msg("[ENVDIAG] gate=1");
+        else
+            Msg("[ENVDIAG] gate=0");
+    }
+
+    if (!enabled)
+        return;
+
+    ++calls;
+
+    // Amostragens internas por chamada. P1/P2 só rodam no mundo.
+    if (!(calls == 1 || calls == 60 || calls == 300))
+        return;
+
+    if (!g_pGamePersistent)
+    {
+        Msg("[ENVDIAG] call=%u time=n/a weather=n/a sun=(n/a) amb=(n/a) hemi=(n/a) sky=n/a fog=n/a env_ptr_valid=0 lantern=n/a",
+            calls);
+        return;
+    }
+
+    const auto& desc = g_pGamePersistent->Environment().CurrentEnv;
+
+    Msg("[ENVDIAG] call=%u time=n/a weather=n/a sun=(%.3f,%.3f,%.3f) amb=(%.3f,%.3f,%.3f) hemi=(%.3f,%.3f,%.3f) sky=n/a fog=n/a env_ptr_valid=1 lantern=n/a",
+        calls,
+        desc.sun_color.x, desc.sun_color.y, desc.sun_color.z,
+        desc.ambient.x, desc.ambient.y, desc.ambient.z,
+        desc.hemi_color.x, desc.hemi_color.y, desc.hemi_color.z);
+}
+#endif
+
 } // namespace xray::render::RENDER_NAMESPACE
