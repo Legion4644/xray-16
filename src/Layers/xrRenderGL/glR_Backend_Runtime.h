@@ -90,6 +90,102 @@ IC void CBackend::log_stencil_diag(const char* pt)
 }
 
 #if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+static void log_sun_diag_impl()
+{
+    static bool checked = false;
+    static bool enabled = false;
+    static bool gate_logged = false;
+    static u32 calls = 0;
+
+    if (!checked)
+    {
+        checked = true;
+        FILE* f = fopen("/storage/emulated/0/XRay/render_diag.txt", "rb");
+        if (f)
+        {
+            fclose(f);
+            enabled = true;
+        }
+        else
+        {
+            enabled = false;
+        }
+    }
+
+    if (!gate_logged)
+    {
+        gate_logged = true;
+        if (enabled)
+        {
+            Msg("[SUNDIAG] gate=1");
+        }
+        else
+        {
+            Msg("[SUNDIAG] gate=0");
+        }
+    }
+
+    if (!enabled)
+        return;
+
+    if (calls >= 3)
+        return;
+
+    GLenum err = GL_NO_ERROR;
+    GLenum fbStatus = 0;
+    GLint depthObj = 0, depthSize = 0;
+    GLint texCompareMode = 0, texCompareFunc = 0;
+
+    fbStatus = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
+    err = glGetError();
+
+    glGetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &depthObj);
+    err = glGetError();
+    glGetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_DEPTH_SIZE, &depthSize);
+    err = glGetError();
+
+    if (depthObj != 0)
+    {
+        glBindTexture(GL_TEXTURE_2D_ARRAY, depthObj);
+        err = glGetError();
+        if (err == GL_NO_ERROR)
+        {
+            glGetTexParameteriv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_COMPARE_MODE, &texCompareMode);
+            err = glGetError();
+            glGetTexParameteriv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_COMPARE_FUNC, &texCompareFunc);
+            err = glGetError();
+        }
+        glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+        err = glGetError();
+    }
+
+    Msg("[SUNDIAG] call=%u fbStatus=0x%X smapFmt=n/a drawCalls=%u compareMode=0x%X compareFunc=0x%X q=%u near=%f far=%f nBias=%f nScale=%f fBias=%f fScale=%f err=0x%X",
+        calls,
+        fbStatus,
+        stat.render.calls,
+        texCompareMode,
+        texCompareFunc,
+        ps_r_sun_quality,
+        ps_r2_sun_near,
+        ps_r2_sun_far,
+        ps_r2_sun_depth_near_bias,
+        ps_r2_sun_depth_near_scale,
+        ps_r2_sun_depth_far_bias,
+        ps_r2_sun_depth_far_scale,
+        err);
+
+    calls++;
+}
+#endif
+
+IC void CBackend::log_sun_diag()
+{
+#if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
+    log_sun_diag_impl();
+#endif
+}
+
+#if defined(__ANDROID__) && defined(XR_PLATFORM_GLES)
 void xr_gl_log_env_diag_impl();
 #endif
 

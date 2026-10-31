@@ -20,6 +20,7 @@ void CRenderTarget::phase_smap_direct(CBackend& cmd_list, light *L, u32 sub_phas
             rt_smap_depth
         );
         cmd_list.ClearZB(rt_smap_depth, 1.0f);
+        cmd_list.log_sun_diag();
     }
 
     // Stencil	- disable
