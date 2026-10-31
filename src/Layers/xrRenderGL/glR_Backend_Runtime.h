@@ -116,13 +116,9 @@ static void log_sun_diag_impl()
     {
         gate_logged = true;
         if (enabled)
-        {
             Msg("[SUNDIAG] gate=1");
-        }
         else
-        {
             Msg("[SUNDIAG] gate=0");
-        }
     }
 
     if (!enabled)
@@ -134,7 +130,6 @@ static void log_sun_diag_impl()
     GLenum err = GL_NO_ERROR;
     GLenum fbStatus = 0;
     GLint depthObj = 0, depthSize = 0;
-    GLint texCompareMode = 0, texCompareFunc = 0;
 
     fbStatus = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
     err = glGetError();
@@ -144,34 +139,11 @@ static void log_sun_diag_impl()
     glGetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_DEPTH_SIZE, &depthSize);
     err = glGetError();
 
-    if (depthObj != 0)
-    {
-        glBindTexture(GL_TEXTURE_2D_ARRAY, depthObj);
-        err = glGetError();
-        if (err == GL_NO_ERROR)
-        {
-            glGetTexParameteriv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_COMPARE_MODE, &texCompareMode);
-            err = glGetError();
-            glGetTexParameteriv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_COMPARE_FUNC, &texCompareFunc);
-            err = glGetError();
-        }
-        glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
-        err = glGetError();
-    }
-
-    Msg("[SUNDIAG] call=%u fbStatus=0x%X smapFmt=n/a drawCalls=%u compareMode=0x%X compareFunc=0x%X q=%u near=%f far=%f nBias=%f nScale=%f fBias=%f fScale=%f err=0x%X",
+    Msg("[SUNDIAG] call=%u fbStatus=0x%X depthObj=%d depthSize=%d smapFmt=n/a drawCalls=n/a compareMode=n/a compareFunc=n/a q=n/a near=n/a far=n/a nBias=n/a nScale=n/a fBias=n/a fScale=n/a err=0x%X",
         calls,
         fbStatus,
-        stat.render.calls,
-        texCompareMode,
-        texCompareFunc,
-        ps_r_sun_quality,
-        ps_r2_sun_near,
-        ps_r2_sun_far,
-        ps_r2_sun_depth_near_bias,
-        ps_r2_sun_depth_near_scale,
-        ps_r2_sun_depth_far_bias,
-        ps_r2_sun_depth_far_scale,
+        depthObj,
+        depthSize,
         err);
 
     calls++;
