@@ -5,12 +5,6 @@
 #include <cstdio>
 #include <cerrno>
 #include "xrEngine/Environment.h"
-#include "xrGame/Actor.h"
-#include "xrGame/Torch.h"
-#include "xrServerEntities/smart_cast.h"
-#include "xrServerEntities/inventory_space.h"
-#include "xrGame/InventoryOwner.h"
-#include "xrGame/Inventory.h"
 
 namespace xray::render::RENDER_NAMESPACE
 {
@@ -147,7 +141,6 @@ IC void CBackend::log_env_diag()
     const CEnvDescriptorMixer* env_desc = nullptr;
     float game_time = -1.0f;
     const char* weather_name = "n/a";
-    bool lantern_active = false;
 
     if (g_pGamePersistent)
     {
@@ -157,17 +150,6 @@ IC void CBackend::log_env_diag()
 
         game_time = env.GetGameTime();
         weather_name = env.GetWeather().c_str();
-
-        // Check actor lantern/torch
-        CActor* actor = Actor();
-        if (actor)
-        {
-            CTorch* torch = smart_cast<CTorch*>(actor->inventory().ItemFromSlot(TORCH_SLOT));
-            if (torch)
-            {
-                lantern_active = torch->torch_active();
-            }
-        }
     }
 
     // Log the environment data
@@ -179,19 +161,18 @@ IC void CBackend::log_env_diag()
         Fvector3 sky = env_desc->sky_color;
         Fvector3 fog = env_desc->fog_color;
 
-        Msg("[ENVDIAG] call=%u time=%.3f weather=%s sun=(%.3f,%.3f,%.3f) amb=(%.3f,%.3f,%.3f) hemi=(%.3f,%.3f,%.3f,%.3f) sky=(%.3f,%.3f,%.3f) fog=(%.3f,%.3f,%.3f) env_ptr_valid=1 lantern=%d",
+        Msg("[ENVDIAG] call=%u time=%.3f weather=%s sun=(%.3f,%.3f,%.3f) amb=(%.3f,%.3f,%.3f) hemi=(%.3f,%.3f,%.3f,%.3f) sky=(%.3f,%.3f,%.3f) fog=(%.3f,%.3f,%.3f) env_ptr_valid=1 lantern=n/a",
             call_num, game_time, weather_name,
             sun.x, sun.y, sun.z,
             amb.x, amb.y, amb.z,
             hemi.x, hemi.y, hemi.z, hemi.w,
             sky.x, sky.y, sky.z,
-            fog.x, fog.y, fog.z,
-            lantern_active ? 1 : 0);
+            fog.x, fog.y, fog.z);
     }
     else
     {
-        Msg("[ENVDIAG] call=%u time=%.3f weather=%s sun=(n/a) amb=(n/a) hemi=(n/a) sky=(n/a) fog=(n/a) env_ptr_valid=0 lantern=%d",
-            call_num, game_time, weather_name, lantern_active ? 1 : 0);
+        Msg("[ENVDIAG] call=%u time=%.3f weather=%s sun=(n/a) amb=(n/a) hemi=(n/a) sky=(n/a) fog=(n/a) env_ptr_valid=0 lantern=n/a",
+            call_num, game_time, weather_name);
     }
 #endif
 }
