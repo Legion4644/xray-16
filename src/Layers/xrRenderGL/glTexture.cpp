@@ -75,6 +75,46 @@ static int find_mip_for_max_dim(const gli::texture2d& src, int tex_max)
 }
 #endif
 
+#if defined(__ANDROID__)
+// loader-mipfix: extract a mip chain from an already-linear texture.
+// This avoids memcpy-ing a single compressed DXT mip, which can misalign blocks
+// and produce green/black garbage.
+static bool RGL_ExtractMipChain(const gli::texture2d& src, size_t start_level, gli::texture2d& dst)
+{
+    if (start_level >= src.levels())
+        return false;
+
+    const size_t out_levels = src.levels() - start_level;
+    if (out_levels == 0)
+        return false;
+
+    const auto first_ext = src.extent(start_level);
+    dst = gli::texture2d(src.format(), first_ext, out_levels);
+    if (dst.empty())
+        return false;
+
+    for (size_t l = 0; l < out_levels; ++l)
+    {
+        const size_t sl = start_level + l;
+        const auto se = src.extent(sl);
+        const auto de = dst.extent(l);
+
+        if (se.x != de.x || se.y != de.y)
+            return false;
+
+        const size_t ss = src.size(sl);
+        const size_t ds = dst.size(l);
+
+        if (ss == 0 || ds == 0 || ss != ds)
+            return false;
+
+        std::memcpy(dst.data(0, 0, l), src.data(0, 0, sl), ds);
+    }
+
+    return true;
+}
+#endif
+
 u32 calc_texture_size(int lod, u32 mip_cnt, size_t orig_size)
 {
     if (1 == mip_cnt)
@@ -823,19 +863,24 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
                 s_mip_cut_before_convert_logged = true;
             }
             
-            int lod = find_mip_for_max_dim(src, psTextureMax);
+                        int lod = find_mip_for_max_dim(src, psTextureMax);
             if (lod > 0)
             {
                 auto ext_before = src.extent();
                 auto ext_after = src.extent(lod);
-                Msg("* MEM: mip-cut tex=%s %dx%d -> %dx%d (tex_max=%d)", fn, ext_before.x, ext_before.y, ext_after.x, ext_after.y, psTextureMax);
-                
-                // Create a new texture2d with only the target mip level
-                gli::texture2d src_lod(src.format(), ext_after, 1);
-                std::memcpy(src_lod.data(), src.data(0, 0, lod), src.size(lod));
-                gli::texture2d dst = gli::convert(src_lod, gli::FORMAT_RGBA8_UNORM_PACK8);
-                if (!dst.empty())
-                    converted = dst;
+                Msg("* MEM: mip-cut tex=%s %dx%d -> %dx%d (tex_max=%d) [loader-mipfix convert-then-cut]", fn, ext_before.x, ext_before.y, ext_after.x, ext_after.y, psTextureMax);
+
+                // loader-mipfix: convert full compressed texture first, then extract mip chain.
+                // Do NOT memcpy a single compressed mip level before conversion.
+                gli::texture2d full_rgba = gli::convert(src, gli::FORMAT_RGBA8_UNORM_PACK8);
+                if (!full_rgba.empty())
+                {
+                    gli::texture2d cut_rgba;
+                    if (RGL_ExtractMipChain(full_rgba, static_cast<size_t>(lod), cut_rgba))
+                        converted = std::move(cut_rgba);
+                    else
+                        converted = std::move(full_rgba);
+                }
             }
             else
             {
@@ -843,6 +888,7 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
                 if (!dst.empty())
                     converted = dst;
             }
+
             #else
             {
                 gli::texture2d dst = gli::convert(src, gli::FORMAT_RGBA8_UNORM_PACK8);
@@ -950,17 +996,20 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
         if (texture.target() == gli::TARGET_2D)
         {
             gli::texture2d src(texture);
-            int lod = find_mip_for_max_dim(src, psTextureMax);
+                        int lod = find_mip_for_max_dim(src, psTextureMax);
             if (lod > 0)
             {
                 auto ext_before = src.extent();
                 auto ext_after = src.extent(lod);
-                Msg("* MEM: mip-cut tex=%s %dx%d -> %dx%d (tex_max=%d)", fn, ext_before.x, ext_before.y, ext_after.x, ext_after.y, psTextureMax);
-                // Create a new texture2d with only the target mip level
-                gli::texture2d src_lod(src.format(), ext_after, 1);
-                std::memcpy(src_lod.data(), src.data(0, 0, lod), src.size(lod));
-                texture = std::move(src_lod);
+                Msg("* MEM: mip-cut tex=%s %dx%d -> %dx%d (tex_max=%d) [loader-mipfix preserve-mipchain]", fn, ext_before.x, ext_before.y, ext_after.x, ext_after.y, psTextureMax);
+
+                // loader-mipfix: preserve remaining mip chain instead of truncating to one level.
+                // If extraction fails, keep original texture rather than risk corrupted data.
+                gli::texture2d cut_src;
+                if (RGL_ExtractMipChain(src, static_cast<size_t>(lod), cut_src))
+                    texture = std::move(cut_src);
             }
+
         }
         #endif
     }
