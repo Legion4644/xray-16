@@ -353,7 +353,7 @@ static bool RGL_IsSep(char c)
 static bool RGL_AstcCacheEnabled()
 {
     const char* v = std::getenv("XRAY_ASTC_CACHE");
-    return !(v && v[0] == '0');
+    return v && v[0] == '1';
 }
 
 static const char* RGL_FindGamedataRel(pcstr path)
@@ -395,9 +395,30 @@ static bool RGL_BuildAstcCachePath(pcstr fn, string_path out, size_t out_size)
     if (!rel || !rel[0])
         return false;
 
+    if (std::strstr(rel, "..") != nullptr)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=unsafe_relative path=%s", rel);
+        return false;
+    }
+
     const char* root = std::getenv("XRAY_ASTC_CACHE_ROOT");
     if (!root || !root[0])
-        root = "/storage/emulated/0/XRay/cache/astc";
+        root = "/storage/emulated/0/XRay/cache/astc_v2";
+
+    static const char legacy_root[] = "/storage/emulated/0/XRay/cache/astc";
+    const size_t legacy_len = sizeof(legacy_root) - 1;
+    if (std::strncmp(root, legacy_root, legacy_len) == 0 &&
+        (root[legacy_len] == '\0' || root[legacy_len] == '/'))
+    {
+        Msg("! ASTC-CACHE-REJECT reason=legacy_root path=%s", root);
+        return false;
+    }
+
+    if (std::strstr(root, "..") != nullptr)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=unsafe_root path=%s", root);
+        return false;
+    }
 
     const size_t root_len = std::strlen(root);
     const size_t rel_len = std::strlen(rel);
@@ -405,7 +426,7 @@ static bool RGL_BuildAstcCachePath(pcstr fn, string_path out, size_t out_size)
     const char* dds_ext = ".dds";
     const size_t dds_len = 4;
 
-    const char* astc_ext = ".astc.dds";
+    const char* astc_ext = ".astc.ktx";
     const size_t astc_len = 9;
 
     const bool has_dds =
@@ -439,6 +460,462 @@ static bool RGL_BuildAstcCachePath(pcstr fn, string_path out, size_t out_size)
     std::memcpy(dst, astc_ext, astc_len + 1);
 
     out[need - 1] = 0;
+    return true;
+}
+
+
+static bool RGL_BuildAstcManifestPath(pcstr cache_fn, string_path out, size_t out_size)
+{
+    const size_t cache_len = std::strlen(cache_fn);
+    static const char manifest_suffix[] = ".manifest";
+    const size_t suffix_len = sizeof(manifest_suffix) - 1;
+    const size_t need = cache_len + suffix_len + 1;
+
+    if (need > out_size)
+        return false;
+
+    std::memcpy(out, cache_fn, cache_len);
+    std::memcpy(out + cache_len, manifest_suffix, suffix_len + 1);
+    return true;
+}
+
+static bool RGL_IsSpaceChar(char c)
+{
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
+
+static void RGL_CopyToken(char* dst, size_t dst_size, const char* src)
+{
+    if (!dst || dst_size == 0)
+        return;
+
+    size_t i = 0;
+    if (src)
+    {
+        while (i + 1 < dst_size && src[i] != '\0')
+        {
+            dst[i] = src[i];
+            ++i;
+        }
+    }
+    dst[i] = '\0';
+}
+
+static bool RGL_ParseU32(const char* s, u32& out)
+{
+    if (!s || !*s)
+        return false;
+
+    unsigned long long v = 0;
+
+    while (*s)
+    {
+        if (*s < '0' || *s > '9')
+            return false;
+
+        v = v * 10 + static_cast<unsigned long long>(*s - '0');
+
+        if (v > 0xffffffffULL)
+            return false;
+
+        ++s;
+    }
+
+    out = static_cast<u32>(v);
+    return true;
+}
+
+static bool RGL_IsHex8(const char* s)
+{
+    if (!s)
+        return false;
+
+    for (int i = 0; i < 8; ++i)
+    {
+        const char c = s[i];
+
+        const bool ok =
+            (c >= '0' && c <= '9') ||
+            (c >= 'a' && c <= 'f') ||
+            (c >= 'A' && c <= 'F');
+
+        if (!ok)
+            return false;
+    }
+
+    return s[8] == '\0';
+}
+
+static bool RGL_ReadManifestFile(pcstr path, xr_vector<char>& buf, size_t max_size)
+{
+    std::FILE* f = std::fopen(path, "rb");
+    if (!f)
+        return false;
+
+    if (std::fseek(f, 0, SEEK_END) != 0)
+    {
+        std::fclose(f);
+        return false;
+    }
+
+    const long sz_long = std::ftell(f);
+    if (sz_long <= 0 || static_cast<size_t>(sz_long) > max_size)
+    {
+        std::fclose(f);
+        return false;
+    }
+
+    if (std::fseek(f, 0, SEEK_SET) != 0)
+    {
+        std::fclose(f);
+        return false;
+    }
+
+    const size_t sz = static_cast<size_t>(sz_long);
+    buf.resize(sz + 1);
+
+    if (std::fread(buf.data(), 1, sz, f) != sz)
+    {
+        std::fclose(f);
+        return false;
+    }
+
+    std::fclose(f);
+    buf[sz] = '\0';
+    return true;
+}
+
+static bool RGL_ManifestGet(const xr_vector<char>& buf, const char* key, char* val, size_t val_size)
+{
+    if (!val || val_size == 0)
+        return false;
+
+    val[0] = '\0';
+
+    const size_t key_len = std::strlen(key);
+    const char* p = buf.data();
+
+    while (p && *p)
+    {
+        const char* eol = std::strchr(p, '\n');
+        const size_t line_len = eol ? static_cast<size_t>(eol - p) : std::strlen(p);
+
+        if (line_len > key_len + 1 &&
+            std::strncmp(p, key, key_len) == 0 &&
+            p[key_len] == '=')
+        {
+            const char* v = p + key_len + 1;
+            size_t v_len = line_len - key_len - 1;
+
+            while (v_len > 0 && RGL_IsSpaceChar(v[v_len - 1]))
+                --v_len;
+
+            size_t start = 0;
+            while (start < v_len && RGL_IsSpaceChar(v[start]))
+                ++start;
+
+            v += start;
+            v_len -= start;
+
+            if (v_len == 0)
+                return false;
+
+            if (v_len >= val_size)
+                return false;
+
+            std::memcpy(val, v, v_len);
+            val[v_len] = '\0';
+            return true;
+        }
+
+        if (!eol)
+            break;
+
+        p = eol + 1;
+    }
+
+    return false;
+}
+
+static bool RGL_ManifestRequire(
+    const xr_vector<char>& buf,
+    const char* key,
+    char* val,
+    size_t val_size,
+    pcstr original_fn,
+    pcstr cache_fn,
+    pcstr manifest_fn)
+{
+    if (!RGL_ManifestGet(buf, key, val, val_size))
+    {
+        Msg("! ASTC-CACHE-REJECT reason=missing_field field=%s original=%s cache=%s manifest=%s",
+            key,
+            original_fn,
+            cache_fn,
+            manifest_fn);
+        return false;
+    }
+
+    return true;
+}
+
+struct RGL_AstcManifestInfo
+{
+    char profile[16];
+    char internal_format[16];
+    u32 mip_count;
+    u32 width;
+    u32 height;
+    u32 cache_size;
+    u32 source_size;
+};
+
+static bool RGL_ValidateAstcManifestAndroid(
+    pcstr original_fn,
+    pcstr cache_fn,
+    pcstr manifest_fn,
+    size_t actual_cache_size,
+    const gli::texture& texture,
+    RGL_AstcManifestInfo& info)
+{
+    std::memset(&info, 0, sizeof(info));
+
+    xr_vector<char> mbuf;
+    if (!RGL_ReadManifestFile(manifest_fn, mbuf, 65536))
+    {
+        Msg("! ASTC-CACHE-REJECT reason=missing_manifest original=%s cache=%s manifest=%s",
+            original_fn,
+            cache_fn,
+            manifest_fn);
+        return false;
+    }
+
+    char val[128];
+
+    if (!RGL_ManifestRequire(mbuf, "schema_version", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+    if (std::strcmp(val, "1") != 0)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=unsupported_schema value=%s original=%s cache=%s",
+            val, original_fn, cache_fn);
+        return false;
+    }
+
+    if (!RGL_ManifestRequire(mbuf, "loader_compatibility", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+    if (std::strcmp(val, "xray-16-android-gl-ktx-v1") != 0)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=loader_incompatible value=%s original=%s cache=%s",
+            val, original_fn, cache_fn);
+        return false;
+    }
+
+    if (!RGL_ManifestRequire(mbuf, "container", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+    if (std::strcmp(val, "ktx") != 0)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=unsupported_container value=%s original=%s cache=%s",
+            val, original_fn, cache_fn);
+        return false;
+    }
+
+    if (!RGL_ManifestRequire(mbuf, "profile", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+
+    const bool profile_srgb = (std::strcmp(val, "srgb") == 0);
+    const bool profile_linear = (std::strcmp(val, "linear") == 0);
+    const bool profile_normal = (std::strcmp(val, "normal") == 0);
+    const bool profile_mask = (std::strcmp(val, "mask") == 0);
+
+    if (!profile_srgb && !profile_linear && !profile_normal && !profile_mask)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=unsupported_profile value=%s original=%s cache=%s",
+            val, original_fn, cache_fn);
+        return false;
+    }
+
+    RGL_CopyToken(info.profile, sizeof(info.profile), val);
+
+    if (!RGL_ManifestRequire(mbuf, "texture_class", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+
+    if (!RGL_ManifestRequire(mbuf, "block_size", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+    if (std::strcmp(val, "4x4") != 0)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=unsupported_block_size value=%s original=%s cache=%s",
+            val, original_fn, cache_fn);
+        return false;
+    }
+
+    if (!RGL_ManifestRequire(mbuf, "encoder_name", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+    if (std::strcmp(val, "astcenc") != 0)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=untrusted_encoder value=%s original=%s cache=%s",
+            val, original_fn, cache_fn);
+        return false;
+    }
+
+    if (!RGL_ManifestRequire(mbuf, "generator_name", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+    if (std::strcmp(val, "xray-ddsmips-astcenc-ktx") != 0)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=untrusted_generator value=%s original=%s cache=%s",
+            val, original_fn, cache_fn);
+        return false;
+    }
+
+    if (!RGL_ManifestRequire(mbuf, "generator_version", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+    if (std::strcmp(val, "1") != 0)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=unsupported_generator_version value=%s original=%s cache=%s",
+            val, original_fn, cache_fn);
+        return false;
+    }
+
+    if (!RGL_ManifestRequire(mbuf, "source_path", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+    if (val[0] == '\0')
+    {
+        Msg("! ASTC-CACHE-REJECT reason=missing_source_path original=%s cache=%s",
+            original_fn, cache_fn);
+        return false;
+    }
+
+    if (!RGL_ManifestRequire(mbuf, "source_size", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+    if (!RGL_ParseU32(val, info.source_size) || info.source_size == 0)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=invalid_source_size value=%s original=%s cache=%s",
+            val, original_fn, cache_fn);
+        return false;
+    }
+
+    if (!RGL_ManifestRequire(mbuf, "source_hash_algorithm", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+    if (std::strcmp(val, "crc32") != 0)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=unsupported_source_hash_algorithm value=%s original=%s cache=%s",
+            val, original_fn, cache_fn);
+        return false;
+    }
+
+    if (!RGL_ManifestRequire(mbuf, "source_hash", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+    if (!RGL_IsHex8(val))
+    {
+        Msg("! ASTC-CACHE-REJECT reason=invalid_source_hash_format value=%s original=%s cache=%s",
+            val, original_fn, cache_fn);
+        return false;
+    }
+
+    if (!RGL_ManifestRequire(mbuf, "cache_size", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+    if (!RGL_ParseU32(val, info.cache_size))
+    {
+        Msg("! ASTC-CACHE-REJECT reason=invalid_cache_size value=%s original=%s cache=%s",
+            val, original_fn, cache_fn);
+        return false;
+    }
+    if (static_cast<size_t>(info.cache_size) != actual_cache_size)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=cache_size_mismatch expected=%u actual=%lu original=%s cache=%s",
+            info.cache_size,
+            static_cast<unsigned long>(actual_cache_size),
+            original_fn,
+            cache_fn);
+        return false;
+    }
+
+    if (!RGL_ManifestRequire(mbuf, "width", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+    if (!RGL_ParseU32(val, info.width) || info.width == 0)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=invalid_width value=%s original=%s cache=%s",
+            val, original_fn, cache_fn);
+        return false;
+    }
+
+    if (!RGL_ManifestRequire(mbuf, "height", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+    if (!RGL_ParseU32(val, info.height) || info.height == 0)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=invalid_height value=%s original=%s cache=%s",
+            val, original_fn, cache_fn);
+        return false;
+    }
+
+    if (!RGL_ManifestRequire(mbuf, "mip_count", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+    if (!RGL_ParseU32(val, info.mip_count) || info.mip_count == 0)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=invalid_mip_count value=%s original=%s cache=%s",
+            val, original_fn, cache_fn);
+        return false;
+    }
+
+    if (!RGL_ManifestRequire(mbuf, "mips_preserved", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+    if (std::strcmp(val, "1") != 0)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=mips_not_preserved value=%s original=%s cache=%s",
+            val, original_fn, cache_fn);
+        return false;
+    }
+
+    if (!RGL_ManifestRequire(mbuf, "internal_format", val, sizeof(val), original_fn, cache_fn, manifest_fn))
+        return false;
+
+    RGL_CopyToken(info.internal_format, sizeof(info.internal_format), val);
+
+    if (profile_srgb && std::strcmp(val, "0x93D0") != 0)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=internal_format_mismatch profile=srgb value=%s original=%s cache=%s",
+            val, original_fn, cache_fn);
+        return false;
+    }
+
+    if ((profile_linear || profile_normal || profile_mask) && std::strcmp(val, "0x93B0") != 0)
+    {
+        Msg("! ASTC-CACHE-REJECT reason=internal_format_mismatch profile=%s value=%s original=%s cache=%s",
+            info.profile, val, original_fn, cache_fn);
+        return false;
+    }
+
+    if (!gli::is_compressed(texture.format()))
+    {
+        Msg("! ASTC-CACHE-REJECT reason=not_compressed original=%s cache=%s",
+            original_fn, cache_fn);
+        return false;
+    }
+
+    const size_t levels = texture.levels();
+    if (levels != static_cast<size_t>(info.mip_count))
+    {
+        Msg("! ASTC-CACHE-REJECT reason=mip_count_mismatch expected=%u actual=%lu original=%s cache=%s",
+            info.mip_count,
+            static_cast<unsigned long>(levels),
+            original_fn,
+            cache_fn);
+        return false;
+    }
+
+    const auto ext = texture.extent();
+    if (static_cast<size_t>(ext.x) != static_cast<size_t>(info.width) ||
+        static_cast<size_t>(ext.y) != static_cast<size_t>(info.height))
+    {
+        Msg("! ASTC-CACHE-REJECT reason=extent_mismatch expected=%ux%u actual=%lu x %lu original=%s cache=%s",
+            info.width,
+            info.height,
+            static_cast<unsigned long>(ext.x),
+            static_cast<unsigned long>(ext.y),
+            original_fn,
+            cache_fn);
+        return false;
+    }
+
     return true;
 }
 
@@ -497,6 +974,20 @@ static bool RGL_TryLoadAstcCacheAndroid(
         return false;
     }
 
+    string_path manifest_fn;
+    if (!RGL_BuildAstcManifestPath(cache_fn, manifest_fn, sizeof(manifest_fn)))
+    {
+        Msg("! ASTC-CACHE-FALLBACK original=%s cache=%s reason=manifest_path_overflow",
+            original_fn,
+            cache_fn);
+        return false;
+    }
+
+    RGL_AstcManifestInfo minfo;
+    std::memset(&minfo, 0, sizeof(minfo));
+    if (!RGL_ValidateAstcManifestAndroid(original_fn, cache_fn, manifest_fn, sz, texture, minfo))
+        return false;
+
     GLuint tex = RGL_TextureLoadCompressedDirectAndroid(
         cache_fn,
         texture,
@@ -513,9 +1004,12 @@ static bool RGL_TryLoadAstcCacheAndroid(
         return false;
     }
 
-    Msg("* ASTC-CACHE-HIT original=%s cache=%s size_kb=%lu",
+    Msg("* ASTC-CACHE-HIT validated=1 original=%s cache=%s profile=%s internal=%s mips=%u size_kb=%lu",
         original_fn,
         cache_fn,
+        minfo.profile,
+        minfo.internal_format,
+        minfo.mip_count,
         static_cast<unsigned long>(sz / 1024));
 
     out_tex = tex;
@@ -847,7 +1341,7 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
         if (texture.target() == gli::TARGET_2D)
         {
             gli::texture2d src(texture);
-            
+
             // Android: mip-cut before convert based on tex_max (dimension cap)
             #ifdef __ANDROID__
             static bool s_tex_max_logged = false;
@@ -862,7 +1356,7 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
                 Msg("* MEM: mip-cut-before-convert active=1");
                 s_mip_cut_before_convert_logged = true;
             }
-            
+
                         int lod = find_mip_for_max_dim(src, psTextureMax);
             if (lod > 0)
             {
@@ -915,7 +1409,7 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
         {
             dxt_converted = true;
             dxt_expanded_size = converted.size();
-            
+
             // Track top 10 DXT->RGBA8 allocations
             static std::array<std::pair<std::string, size_t>, 10> s_top_dxt_allocations{};
             size_t alloc_size = dxt_expanded_size;
@@ -928,14 +1422,14 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
                     break;
                 }
             }
-            
+
             static bool s_logged_dxt_fallback = false;
             if (!s_logged_dxt_fallback)
             {
                 Msg("! GLES: converting compressed texture to RGBA8: %s", fn);
                 s_logged_dxt_fallback = true;
             }
-            
+
             // Log top 10 periodically
             static int s_dxt_log_counter = 0;
             if (++s_dxt_log_counter % 50 == 0)
@@ -948,13 +1442,13 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
                         Msg("  %d. %s - %zu KB", rank++, entry.first.c_str(), entry.second / 1024);
                 }
             }
-            
+
             // Track DXT->RGBA8 expanded buffer in host_nonalloc (RISK A)
             // This is the actual RGBA8 buffer allocated by gli::convert, NOT just swapRedBlue
 #ifdef __ANDROID__
             if (dxt_expanded_size > 0)
                 ::Memory.track_mem(xrMemory::MEMCAT_HOST_NONALLOC, dxt_expanded_size / 1024);
-            
+
             // One-shot log for first >1MB DXT->RGBA8 expanded buffer
             static bool s_host_nonalloc_hook_logged = false;
             if (!s_host_nonalloc_hook_logged && dxt_expanded_size > 1024 * 1024)
@@ -963,7 +1457,7 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
                 s_host_nonalloc_hook_logged = true;
             }
 #endif
-            
+
             texture = std::move(converted);
         }
         else
@@ -971,7 +1465,7 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
             gli::target fallback_target = texture.target();
             if (fallback_target != gli::TARGET_2D && fallback_target != gli::TARGET_CUBE && fallback_target != gli::TARGET_3D)
                 fallback_target = gli::TARGET_2D;
-            
+
             Msg("! GLES: compressed texture convert failed, using 1x1 RGBA8 (target=%d): %s", fallback_target, fn);
             if (fallback_target == gli::TARGET_CUBE)
             {
@@ -1291,23 +1785,23 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     // Free host pixel buffer immediately after upload to avoid CPU memory bloat
     size_t host_buf_size = texture.size();
     auto texture_target = texture.target(); // save before clear
-    
+
     // Clear reordered buffer early if it was used (swapRedBlue path)
     reordered.clear();
     reordered.shrink_to_fit();
-    
+
     // Subtract host_nonalloc for reordered buffer after free
 #ifdef __ANDROID__
     if (reordered_size > 0)
         ::Memory.track_mem(xrMemory::MEMCAT_HOST_NONALLOC, -(long long)(reordered_size / 1024));
 #endif
-    
+
     // Subtract host_nonalloc for DXT->RGBA8 expanded buffer after free (RISK A)
 #ifdef __ANDROID__
     if (dxt_converted && dxt_expanded_size > 0)
         ::Memory.track_mem(xrMemory::MEMCAT_HOST_NONALLOC, -(long long)(dxt_expanded_size / 1024));
 #endif
-    
+
     texture.clear();
 
 // Log host buffer size at texture #50 and #100 to verify release
