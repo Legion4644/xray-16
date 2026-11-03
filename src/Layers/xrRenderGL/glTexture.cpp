@@ -352,8 +352,29 @@ static bool RGL_IsSep(char c)
 
 static bool RGL_AstcCacheEnabled()
 {
+    static int s_cached = -1;
+    if (s_cached != -1)
+        return s_cached == 1;
+
     const char* v = std::getenv("XRAY_ASTC_CACHE");
-    return v && v[0] == '1';
+    if (v && v[0] == '1')
+    {
+        s_cached = 1;
+        return true;
+    }
+
+    // A3b: file-based opt-in for Android app process.
+    // Presence enables ASTC cache; absence keeps default safe/off.
+    std::FILE* f = std::fopen("/storage/emulated/0/XRay/astc_cache.enabled", "rb");
+    if (f)
+    {
+        std::fclose(f);
+        s_cached = 1;
+        return true;
+    }
+
+    s_cached = 0;
+    return false;
 }
 
 static const char* RGL_FindGamedataRel(pcstr path)
