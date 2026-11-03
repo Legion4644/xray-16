@@ -49,7 +49,7 @@ jobs:
             -DCMAKE_UNITY_BUILD=ON \
             -DCMAKE_SHARED_LINKER_FLAGS="-lGLESv3 -lGLESv2 -lGLESv1_CM -lEGL -llog -landroid" \
             -DCMAKE_INSTALL_PREFIX="${PWD}/install-android" \
-            -DXR_ANDROID_GLRENDER=${{ github.ref_name == 'android-port-glrender' && 'ON' || 'OFF' }}
+            -DXR_ANDROID_GLRENDER=${{ github.ref_name == 'android-port-glrender' && 'ON' || 'OFF' }} \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
       - name: Build
