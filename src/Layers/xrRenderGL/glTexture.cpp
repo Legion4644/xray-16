@@ -310,7 +310,7 @@ static GLuint RGL_TextureLoadCompressedDirectAndroid(
     glBindTexture(GL_TEXTURE_2D, 0);
 
     ret_msize = static_cast<u32>(loaded_size);
-    ret_desc = static_cast<GLenum>(fmt.Internal);
+    ret_desc = GL_TEXTURE_2D;  // P-E30A: report target (like legacy 1838), not internal format
     ret_width = static_cast<u32>(cut_w);
     ret_height = static_cast<u32>(cut_h);
 
