@@ -1,10 +1,12 @@
 #include "stdafx.h"
+#include "log_light_diag.h"
 
 namespace xray::render::RENDER_NAMESPACE
 {
 void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
 {
     phase_accumulator(cmd_list);
+    log_light_diag_impl("point", L->flags.type, L->position.x, L->position.y, L->position.z, L->range, L->color.r, L->color.g, L->color.b, L->flags.bShadow, Device.dwFrame);
     RImplementation.Stats.l_visible++;
 
     ref_shader shader = L->s_point;

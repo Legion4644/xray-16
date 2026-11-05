@@ -85,6 +85,35 @@ IC void CBackend::log_stencil_diag(const char* pt)
     Msg("[STENCILDIAG] pt=%s call=%u fbStatus=0x%X depthObj=%d depthSize=%d stencilObj=%d stencilSize=%d stTest=%d func=0x%X ref=%d mask=0x%X wmask=0x%X err=0x%X",
         pt, g_stencil_diag_calls, fbStatus, depthObj, depthSize, stencilObj, stencilSize, stTest, func, ref, mask, wmask, err);
 
+    {
+        GLint dFunc = 0;
+        GLint dTestI = glIsEnabled(GL_DEPTH_TEST) ? 1 : 0;
+        GLint bTestI = glIsEnabled(GL_BLEND) ? 1 : 0;
+        GLint cullOn = glIsEnabled(GL_CULL_FACE) ? 1 : 0;
+        GLint cullFaceMode = 0;
+        GLint frontFace = 0;
+        GLint bSrc = 0;
+        GLint bDst = 0;
+        GLint bEq = 0;
+        GLint vpI[4] = { 0, 0, 0, 0 };
+        GLfloat drF[2] = { 0.f, 0.f };
+        GLboolean dWrite = GL_FALSE;
+        GLboolean cMask[4] = { GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE };
+        CHK_GL(glGetIntegerv(GL_DEPTH_FUNC, &dFunc));
+        CHK_GL(glGetBooleanv(GL_DEPTH_WRITEMASK, &dWrite));
+        CHK_GL(glGetBooleanv(GL_COLOR_WRITEMASK, cMask));
+        CHK_GL(glGetIntegerv(GL_BLEND_SRC_RGB, &bSrc));
+        CHK_GL(glGetIntegerv(GL_BLEND_DST_RGB, &bDst));
+        CHK_GL(glGetIntegerv(GL_BLEND_EQUATION_RGB, &bEq));
+        CHK_GL(glGetIntegerv(GL_CULL_FACE_MODE, &cullFaceMode));
+        CHK_GL(glGetIntegerv(GL_FRONT_FACE, &frontFace));
+        CHK_GL(glGetIntegerv(GL_VIEWPORT, vpI));
+        CHK_GL(glGetFloatv(GL_DEPTH_RANGE, drF));
+        Msg("[STENCILDIAG2] pt=%s depthTest=%d depthFunc=0x%X depthWrite=%d colorMask=%d%d%d%d blend=%d srcRGB=0x%X dstRGB=0x%X eqRGB=0x%X cullOn=%d cullFaceMode=0x%X frontFace=0x%X vp=%d,%d,%d,%d depthRange=%.3f..%.3f",
+            pt, dTestI, (unsigned)dFunc, (int)dWrite, (int)cMask[0], (int)cMask[1], (int)cMask[2], (int)cMask[3],
+            bTestI, (unsigned)bSrc, (unsigned)bDst, (unsigned)bEq, cullOn, (unsigned)cullFaceMode, (unsigned)frontFace,
+            vpI[0], vpI[1], vpI[2], vpI[3], (double)drF[0], (double)drF[1]);
+    }
     g_stencil_diag_calls++;
 #endif
 }

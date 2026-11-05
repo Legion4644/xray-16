@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "log_light_diag.h"
 #include "Layers/xrRender/du_cone.h"
 
 namespace xray::render::RENDER_NAMESPACE
@@ -41,6 +42,7 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
         cmd_list.set_xform_world(L->m_xform);
         cmd_list.set_xform_view(Device.mView);
         cmd_list.set_xform_project(Device.mProject);
+        log_light_diag_impl("spot", L->flags.type, L->position.x, L->position.y, L->position.z, L->range, L->color.r, L->color.g, L->color.b, L->flags.bShadow, Device.dwFrame);
         enable_scissor(L);
         enable_dbt_bounds(L);
 
