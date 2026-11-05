@@ -50,7 +50,7 @@ IC void CBackend::log_stencil_diag(const char* pt)
     if (!g_stencil_diag_enabled)
         return;
 
-    if (g_stencil_diag_calls >= 6)
+    if (g_stencil_diag_calls >= 2000)
         return;
 
     GLenum err = GL_NO_ERROR;

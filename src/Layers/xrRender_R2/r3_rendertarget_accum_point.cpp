@@ -53,6 +53,7 @@ void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
         cmd_list.set_Stencil(TRUE, D3DCMP_LESSEQUAL, dwLightMarkerID, 0x01, 0x7f,
             D3DSTENCILOP_KEEP, D3DSTENCILOP_KEEP, D3DSTENCILOP_REPLACE);
     }
+    cmd_list.log_stencil_diag("P3-mask-back");
     draw_volume(cmd_list, L);
 
     // frontfaces: if (1<=stencil && zfail)	stencil = 0x1
@@ -67,6 +68,7 @@ void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
         cmd_list.set_Stencil(TRUE, D3DCMP_LESSEQUAL, 0x01, 0x7f, 0x7f,
             D3DSTENCILOP_KEEP, D3DSTENCILOP_KEEP, D3DSTENCILOP_REPLACE);
     }
+    cmd_list.log_stencil_diag("P3-mask-front");
     draw_volume(cmd_list, L);
 
     // nv-stencil recompression
@@ -126,12 +128,14 @@ void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
         if (!RImplementation.o.msaa)
         {
             cmd_list.set_Stencil(TRUE, D3DCMP_EQUAL, dwLightMarkerID, 0xff, 0x00);
+            cmd_list.log_stencil_diag("P3-shade-nonmsaa");
             draw_volume(cmd_list, L);
         }
         else // checked Holger
         {
             // per pixel
             cmd_list.set_Stencil(TRUE, D3DCMP_EQUAL, dwLightMarkerID, 0xff, 0x00);
+            cmd_list.log_stencil_diag("P3-shade-msaa-px");
             draw_volume(cmd_list, L);
 
             // per sample
@@ -140,6 +144,7 @@ void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
                 cmd_list.set_Element(shader_msaa[0]->E[_id]);
                 cmd_list.set_Stencil(TRUE, D3DCMP_EQUAL, dwLightMarkerID | 0x80, 0xff, 0x00);
                 cmd_list.set_CullMode(D3DCULL_CW);
+                cmd_list.log_stencil_diag("P3-shade-msaa-opt");
                 draw_volume(cmd_list, L);
             }
             else // checked Holger
@@ -151,6 +156,7 @@ void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
                     cmd_list.StateManager.SetSampleMask(u32(1) << i);
                     cmd_list.set_Stencil(TRUE, D3DCMP_EQUAL, dwLightMarkerID | 0x80, 0xff, 0x00);
                     cmd_list.set_CullMode(D3DCULL_CW);
+                    cmd_list.log_stencil_diag("P3-shade-msaa-dx11");
                     draw_volume(cmd_list, L);
                 }
                 cmd_list.StateManager.SetSampleMask(0xffffffff);
@@ -180,6 +186,7 @@ void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
         if (!RImplementation.o.msaa)
         {
             cmd_list.set_Stencil(TRUE, D3DCMP_LESSEQUAL, dwLightMarkerID, 0xff, 0x00);
+            cmd_list.log_stencil_diag("P3-bcopy-nonmsaa");
             draw_volume(cmd_list, L);
         }
         else // checked Holger
@@ -187,6 +194,7 @@ void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
             // per pixel
             cmd_list.set_CullMode(D3DCULL_CW);
             cmd_list.set_Stencil(TRUE, D3DCMP_EQUAL, dwLightMarkerID, 0xff, 0x00);
+            cmd_list.log_stencil_diag("P3-bcopy-msaa-px");
             draw_volume(cmd_list, L);
             if (RImplementation.o.msaa_opt)
             {
@@ -194,6 +202,7 @@ void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
                 cmd_list.set_Element(s_accum_mask_msaa[0]->E[SE_MASK_ACCUM_VOL]);
                 cmd_list.set_CullMode(D3DCULL_CW);
                 cmd_list.set_Stencil(TRUE, D3DCMP_EQUAL, dwLightMarkerID | 0x80, 0xff, 0x00);
+                cmd_list.log_stencil_diag("P3-bcopy-msaa-opt");
                 draw_volume(cmd_list, L);
             }
             else // checked Holger
@@ -205,6 +214,7 @@ void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
                     cmd_list.set_CullMode(D3DCULL_CW);
                     cmd_list.StateManager.SetSampleMask(u32(1) << i);
                     cmd_list.set_Stencil(TRUE, D3DCMP_EQUAL, dwLightMarkerID | 0x80, 0xff, 0x00);
+                    cmd_list.log_stencil_diag("P3-bcopy-msaa-dx11");
                     draw_volume(cmd_list, L);
                 }
                 cmd_list.StateManager.SetSampleMask(0xffffffff);
