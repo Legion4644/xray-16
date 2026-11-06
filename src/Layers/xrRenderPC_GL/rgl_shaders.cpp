@@ -6,6 +6,10 @@
 
 #include "Layers/xrRender/ShaderResourceTraits.h"
 #include "xrCore/FileCRC32.h"
+#include <cstring>
+#include <fstream>
+#include <string>
+
 
 namespace xray::render::RENDER_NAMESPACE
 {
@@ -545,6 +549,7 @@ HRESULT CRender::shader_compile(pcstr name, IReader* fs, pcstr pFunctionName,
 #ifdef DEBUG
                         Log("* Loading shader:", full_path);
 #endif
+                        Msg("SHADERCACHEHIT: %s", filename);
                         program = create_shader(pTarget, (pcstr*)file->pointer(), file->elapsed(), filename, result, &binaryFormat);
                     }
                 }
@@ -569,6 +574,30 @@ HRESULT CRender::shader_compile(pcstr name, IReader* fs, pcstr pFunctionName,
         for (size_t i = 0; i < sources.length(); ++i)
             joined += sources.get()[i];
         const std::string essl = essl::rewrite(joined, pTarget[0] == 'v');
+        {
+            std::ifstream gate("/storage/emulated/0/XRay/render_diag.txt");
+            if (gate.good())
+            {
+                const bool interesting =
+                    strstr(name, "accum_omni_unshadowed") != nullptr ||
+                    strstr(name, "deffer_base_bump") != nullptr ||
+                    strstr(name, "accum_volume") != nullptr;
+                if (interesting)
+                {
+                    std::string safetag(name);
+                    for (char &ch : safetag)
+                        if (ch == '/' || ch == 92)
+                            ch = '_';
+                    safetag += ".";
+                    safetag += pTarget;
+                    const std::string base = "/storage/emulated/0/XRay/logs/shaderdump_" + safetag;
+                    std::ofstream(base + ".joined.txt") << joined;
+                    std::ofstream(base + ".essl.txt") << essl;
+                    Msg("SHADERDUMP: %s", safetag.c_str());
+                }
+            }
+        }
+
         pcstr esslSource = essl.c_str();
         program = create_shader(pTarget, &esslSource, 1, filename, result, nullptr);
 #else
