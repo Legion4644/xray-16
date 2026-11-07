@@ -34,15 +34,30 @@ void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
     cmd_list.set_xform_project(Device.mProject);
 #if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
     const bool bNearIntersect = enable_scissor(L);
-    Msg("[MUZZLELIGHT] frame=%u range=%.2f near_intersect=%d type=%d shadow=%d pos=(%.2f,%.2f,%.2f)",
-        Device.dwFrame,
-        L->range,
-        bNearIntersect ? 1 : 0,
-        static_cast<int>(L->flags.type),
-        L->flags.bShadow,
-        L->position.x,
-        L->position.y,
-        L->position.z);
+    static int g_muzzle_log_budget = 0;
+    if (g_muzzle_log_budget < 600 && L->range < 4.0f)
+    {
+        Fvector dbg_Lpos;
+        Device.mView.transform_tiny(dbg_Lpos, L->position);
+        float dbg_dist = _sqrt(_sqr(dbg_Lpos.x) + _sqr(dbg_Lpos.y) + _sqr(dbg_Lpos.z));
+        if (dbg_dist < 12.0f)
+        {
+            Msg("[MUZZLELIGHT2] frame=%u range=%.2f near_intersect=%d type=%d shadow=%d pos=(%.2f,%.2f,%.2f) view=(%.2f,%.2f,%.2f) dist=%.2f",
+                Device.dwFrame,
+                L->range,
+                bNearIntersect ? 1 : 0,
+                static_cast<int>(L->flags.type),
+                static_cast<int>(L->flags.bShadow),
+                L->position.x,
+                L->position.y,
+                L->position.z,
+                dbg_Lpos.x,
+                dbg_Lpos.y,
+                dbg_Lpos.z,
+                dbg_dist);
+            ++g_muzzle_log_budget;
+        }
+    }
 #else
     enable_scissor(L);
 #endif
