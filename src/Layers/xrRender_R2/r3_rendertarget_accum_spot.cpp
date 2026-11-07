@@ -41,7 +41,50 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
         L->xform_calc();
         cmd_list.set_xform_world(L->m_xform);
         cmd_list.set_xform_view(Device.mView);
-        cmd_list.set_xform_project(Device.mProject);
+#if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+        static int g_spot_log_budget = 0;
+        if (g_spot_log_budget < 600)
+        {
+            Fvector dbg_Lpos;
+            Device.mView.transform_tiny(dbg_Lpos, L->position);
+            float dbg_dist = _sqrt(_sqr(dbg_Lpos.x) + _sqr(dbg_Lpos.y) + _sqr(dbg_Lpos.z));
+
+            const char* dbg_type = "UNKNOWN";
+            if (L->flags.type == IRender_Light::REFLECTED) dbg_type = "REFLECTED";
+            else if (L->flags.type == IRender_Light::POINT) dbg_type = "POINT";
+            else if (L->flags.type == IRender_Light::SPOT) dbg_type = "SPOT";
+            else if (L->flags.type == IRender_Light::OMNIPART) dbg_type = "OMNIPART";
+
+            Msg("[SPOTLIGHT3] frame=%u type=%d(%s) shadow=%d volumetric=%d range=%.2f dist=%.2f pos=(%.2f,%.2f,%.2f) view=(%.2f,%.2f,%.2f) dir=(%.2f,%.2f,%.2f) cone=%.2f vsize=%.2f color=(%.2f,%.2f,%.2f) marker=%u smap=(%d,%d,%d,%d)",
+                Device.dwFrame,
+                static_cast<int>(L->flags.type),
+                dbg_type,
+                static_cast<int>(L->flags.bShadow),
+                static_cast<int>(L->flags.bVolumetric),
+                L->range,
+                dbg_dist,
+                L->position.x,
+                L->position.y,
+                L->position.z,
+                dbg_Lpos.x,
+                dbg_Lpos.y,
+                dbg_Lpos.z,
+                L->direction.x,
+                L->direction.y,
+                L->direction.z,
+                L->cone,
+                L->virtual_size,
+                L->color.r,
+                L->color.g,
+                L->color.b,
+                static_cast<unsigned>(dwLightMarkerID),
+                static_cast<int>(L->X.S.posX),
+                static_cast<int>(L->X.S.posY),
+                static_cast<int>(L->X.S.size),
+                static_cast<int>(L->X.S.transluent));
+            ++g_spot_log_budget;
+        }
+#endif
         log_light_diag_impl("spot", L->flags.type, L->position.x, L->position.y, L->position.z, L->range, L->color.r, L->color.g, L->color.b, L->flags.bShadow, Device.dwFrame);
         enable_scissor(L);
         enable_dbt_bounds(L);
