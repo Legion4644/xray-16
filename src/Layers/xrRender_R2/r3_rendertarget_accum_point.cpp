@@ -32,7 +32,20 @@ void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
     cmd_list.set_xform_world(L->m_xform);
     cmd_list.set_xform_view(Device.mView);
     cmd_list.set_xform_project(Device.mProject);
+#if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+    const bool bNearIntersect = enable_scissor(L);
+    Msg("[MUZZLELIGHT] frame=%u range=%.2f near_intersect=%d type=%d shadow=%d pos=(%.2f,%.2f,%.2f)",
+        Device.dwFrame,
+        L->range,
+        bNearIntersect ? 1 : 0,
+        static_cast<int>(L->flags.type),
+        L->flags.bShadow,
+        L->position.x,
+        L->position.y,
+        L->position.z);
+#else
     enable_scissor(L);
+#endif
     enable_dbt_bounds(L);
 
     // *****************************	Mask by stencil		*************************************
@@ -80,7 +93,14 @@ void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
     // *****************************	Minimize overdraw	*************************************
     // Select shader (front or back-faces), *** back, if intersect near plane
     cmd_list.set_ColorWriteEnable();
+    #if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+    if (bNearIntersect)
+        cmd_list.set_CullMode(CULL_CW); // back
+    else
+        cmd_list.set_CullMode(CULL_CCW); // front
+    #else
     cmd_list.set_CullMode(CULL_CW); // back
+    #endif
     /*
     if (bIntersect)	RCache.set_CullMode		(CULL_CW);		// back
     else			RCache.set_CullMode		(CULL_CCW);		// front
@@ -125,7 +145,14 @@ void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
         //			HW.pDevice->SetSamplerState	( 0, D3DSAMP_MIPMAPLODBIAS, FOURCC_GET4 );
         //		}
 
+        #if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+        if (bNearIntersect)
+            cmd_list.set_CullMode(CULL_CW); // back
+        else
+            cmd_list.set_CullMode(CULL_CCW); // front
+        #else
         cmd_list.set_CullMode(CULL_CW); // back
+        #endif
         // Render if (light_id <= stencil && z-pass)
         if (!RImplementation.o.msaa)
         {
