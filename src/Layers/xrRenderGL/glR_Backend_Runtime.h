@@ -665,6 +665,12 @@ IC void CBackend::set_Scissor(const Irect* R)
 
 IC void CBackend::SetViewport(const D3D_VIEWPORT& viewport) const
 {
+    glViewport(viewport.TopLeftX, viewport.TopLeftY, viewport.Width, viewport.Height);
+    glDepthRangef(viewport.MinDepth, viewport.MaxDepth);
+}
+
+IC void CBackend::SetViewportScissor(const D3D_VIEWPORT& viewport) const
+{
     const GLint vx = static_cast<GLint>(viewport.TopLeftX);
     const GLint vy = static_cast<GLint>(viewport.TopLeftY);
     const GLsizei vw = static_cast<GLsizei>(viewport.Width);
@@ -673,10 +679,10 @@ IC void CBackend::SetViewport(const D3D_VIEWPORT& viewport) const
     glViewport(vx, vy, vw, vh);
     glDepthRangef(viewport.MinDepth, viewport.MaxDepth);
 
-    // Emulate D3D viewport clipping in GL.
-    // In D3D the viewport rectangle clips rasterization. In GL glViewport only
-    // transforms coordinates; without scissor, dynamic shadow atlas cells can
-    // overwrite neighboring cells and produce localized square artifacts.
+    // Scoped D3D-like viewport clipping for dynamic shadow atlas cells.
+    // This is intentionally not installed in global SetViewport: the previous
+    // global experiment produced a fixed screen-space artifact. Only the R2
+    // shadow-map cell path calls this helper.
     if (vw > 0 && vh > 0)
     {
         CHK_GL(glEnable(GL_SCISSOR_TEST));

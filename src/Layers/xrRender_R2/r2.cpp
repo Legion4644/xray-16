@@ -820,6 +820,11 @@ void CRender::rmNormal(CBackend& cmd_list)
 {
     const D3D_VIEWPORT viewport = { 0, 0, Target->get_width(cmd_list), Target->get_height(cmd_list), 0.f, 1.f };
     cmd_list.SetViewport(viewport);
+
+#if defined(USE_OGL)
+    // Restoring the normal viewport must also clear any shadow-cell scissor.
+    cmd_list.set_Scissor(nullptr);
+#endif
 }
 
 void CRender::SetPostProcessParams(const SPPInfo& ppi)

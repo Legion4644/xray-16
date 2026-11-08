@@ -468,6 +468,9 @@ public:
     void set_ClipPlanes(u32 _enable, Fmatrix* _xform = nullptr, u32 fmask = 0xff);
     IC void set_Scissor(const Irect* rect = nullptr);
     IC void SetViewport(const D3D_VIEWPORT& viewport) const;
+#if defined(USE_OGL)
+    IC void SetViewportScissor(const D3D_VIEWPORT& viewport) const;
+#endif
 
     IC void SetTextureFactor(u32 factor) const;
     IC void SetAmbient(u32 ambient) const;

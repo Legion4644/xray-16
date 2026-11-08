@@ -11,6 +11,13 @@ void CRenderTarget::phase_smap_spot_clear(CBackend& cmd_list)
         nullptr,
         rt_smap_depth
     );
+
+#if defined(USE_OGL)
+    // Ensure the whole shadow atlas page is cleared.
+    // A residual cell scissor would make ClearZB partial and leave stale depth.
+    cmd_list.set_Scissor(nullptr);
+#endif
+
     cmd_list.ClearZB(rt_smap_depth, 1.0f);
 
 #if defined(USE_DX11)
@@ -29,7 +36,13 @@ void CRenderTarget::phase_smap_spot(CBackend& cmd_list, light* L)
         rt_smap_depth
     );
     const D3D_VIEWPORT viewport = { L->X.S.posX, L->X.S.posY, L->X.S.size, L->X.S.size, 0.f, 1.f };
+#if defined(USE_OGL)
+    // Use the scoped GL helper so only dynamic shadow atlas cells get D3D-like
+    // viewport clipping. Global SetViewport remains unchanged.
+    cmd_list.SetViewportScissor(viewport);
+#else
     cmd_list.SetViewport(viewport);
+#endif
 
     // Misc		- draw only front-faces //back-faces
     cmd_list.set_CullMode(CULL_CCW);

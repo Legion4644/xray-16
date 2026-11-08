@@ -4,6 +4,12 @@ namespace xray::render::RENDER_NAMESPACE
 {
 void CRenderTarget::phase_accumulator(CBackend& cmd_list)
 {
+#if defined(USE_OGL)
+    // Disable any residual shadow-cell scissor before touching the accumulator.
+    // Otherwise ClearRT()/light accumulation can inherit a partial scissor rect.
+    cmd_list.set_Scissor(nullptr);
+#endif
+
     // Targets
     if (dwAccumulatorClearMark == Device.dwFrame)
     {
