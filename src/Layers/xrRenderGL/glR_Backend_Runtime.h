@@ -665,8 +665,27 @@ IC void CBackend::set_Scissor(const Irect* R)
 
 IC void CBackend::SetViewport(const D3D_VIEWPORT& viewport) const
 {
-    glViewport(viewport.TopLeftX, viewport.TopLeftY, viewport.Width, viewport.Height);
+    const GLint vx = static_cast<GLint>(viewport.TopLeftX);
+    const GLint vy = static_cast<GLint>(viewport.TopLeftY);
+    const GLsizei vw = static_cast<GLsizei>(viewport.Width);
+    const GLsizei vh = static_cast<GLsizei>(viewport.Height);
+
+    glViewport(vx, vy, vw, vh);
     glDepthRangef(viewport.MinDepth, viewport.MaxDepth);
+
+    // Emulate D3D viewport clipping in GL.
+    // In D3D the viewport rectangle clips rasterization. In GL glViewport only
+    // transforms coordinates; without scissor, dynamic shadow atlas cells can
+    // overwrite neighboring cells and produce localized square artifacts.
+    if (vw > 0 && vh > 0)
+    {
+        CHK_GL(glEnable(GL_SCISSOR_TEST));
+        CHK_GL(glScissor(vx, vy, vw, vh));
+    }
+    else
+    {
+        CHK_GL(glDisable(GL_SCISSOR_TEST));
+    }
 }
 
 IC void CBackend::set_Stencil(u32 _enable, u32 _func, u32 _ref, u32 _mask, u32 _writemask, u32 _fail, u32 _pass,
