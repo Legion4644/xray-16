@@ -8,6 +8,19 @@ namespace xray::render::RENDER_NAMESPACE
 
 void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
 {
+    // C6-diag: disable shadowed SPOT/OMNIPART accumulation to test if muzzle square is omnipart/spot shadow.
+    if (L && L->flags.bShadow && (L->flags.type == IRender_Light::SPOT || L->flags.type == IRender_Light::OMNIPART))
+    {
+        static bool g_c6_shadowed_spot_omnipart_accum_disabled_logged = false;
+        if (!g_c6_shadowed_spot_omnipart_accum_disabled_logged)
+        {
+            Msg("[C6] shadowed_spot_omnipart_accum_disabled=1 type=%d shadow=%d",
+                static_cast<int>(L->flags.type),
+                static_cast<int>(L->flags.bShadow));
+            g_c6_shadowed_spot_omnipart_accum_disabled_logged = true;
+        }
+        return;
+    }
     phase_accumulator(cmd_list);
     RImplementation.Stats.l_visible++;
 
