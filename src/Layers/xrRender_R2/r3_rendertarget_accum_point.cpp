@@ -69,7 +69,7 @@ void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
     // RCache.set_ColorWriteEnable		(FALSE);
 
     // backfaces: if (1<=stencil && zfail)	stencil = light_id
-    cmd_list.set_CullMode(CULL_CCW);  // C4-invert-mask-back
+    cmd_list.set_CullMode(CULL_CW);
     if (!RImplementation.o.msaa)
     {
         cmd_list.set_Stencil(TRUE, D3DCMP_LESSEQUAL, dwLightMarkerID, 0x01, 0xff,
@@ -84,7 +84,7 @@ void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
     draw_volume(cmd_list, L);
 
     // frontfaces: if (1<=stencil && zfail)	stencil = 0x1
-    cmd_list.set_CullMode(CULL_CW);  // C4-invert-mask-front
+    cmd_list.set_CullMode(CULL_CCW);
     if (!RImplementation.o.msaa)
     {
         cmd_list.set_Stencil(TRUE, D3DCMP_LESSEQUAL, 0x01, 0xff, 0xff,
@@ -107,9 +107,9 @@ void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
     cmd_list.set_ColorWriteEnable();
     #if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
     if (bNearIntersect)
-        cmd_list.set_CullMode(CULL_CCW); // back  // C4-invert-shade-near1
+        cmd_list.set_CullMode(CULL_CW); // back
     else
-        cmd_list.set_CullMode(CULL_CW); // front  // C4-invert-shade-near0
+        cmd_list.set_CullMode(CULL_CCW); // front
     #else
     cmd_list.set_CullMode(CULL_CW); // back
     #endif
