@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "log_light_diag.h"
 #include "Layers/xrRender/du_cone.h"
+#include "Layers/xrRender/du_sphere.h"
 
 namespace xray::render::RENDER_NAMESPACE
 {
@@ -216,7 +217,16 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
             cmd_list.set_Stencil(TRUE, D3DCMP_LESSEQUAL, dwLightMarkerID, 0x01, 0x7f,
                 D3DSTENCILOP_KEEP, D3DSTENCILOP_KEEP, D3DSTENCILOP_REPLACE);
         }
-        draw_volume(cmd_list, L);
+        if (c16_use_point_path_near_omni)
+        {
+            // T2-diag: mask draws full sphere (no flat cap) for near OMNIPART, eliminate inconsistent cap winding.
+            cmd_list.set_Geometry(g_accum_point);
+            cmd_list.Render(D3DPT_TRIANGLELIST, 0, 0, DU_SPHERE_NUMVERTEX, 0, DU_SPHERE_NUMFACES);
+        }
+        else
+        {
+            draw_volume(cmd_list, L);
+        }
 
         // frontfaces: if (stencil>=light_id && zfail)	stencil = 0x1
         cmd_list.set_CullMode(CULL_CCW);
@@ -230,7 +240,16 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
             cmd_list.set_Stencil(TRUE, D3DCMP_LESSEQUAL, 0x01, 0x7f, 0x7f,
                 D3DSTENCILOP_KEEP, D3DSTENCILOP_KEEP, D3DSTENCILOP_REPLACE);
         }
-        draw_volume(cmd_list, L);
+        if (c16_use_point_path_near_omni)
+        {
+            // T2-diag: mask draws full sphere (no flat cap) for near OMNIPART, eliminate inconsistent cap winding.
+            cmd_list.set_Geometry(g_accum_point);
+            cmd_list.Render(D3DPT_TRIANGLELIST, 0, 0, DU_SPHERE_NUMVERTEX, 0, DU_SPHERE_NUMFACES);
+        }
+        else
+        {
+            draw_volume(cmd_list, L);
+        }
     }
 
     // nv-stencil recompression
@@ -462,7 +481,25 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
                 }
             }
             cmd_list.set_Stencil(TRUE, D3DCMP_LESSEQUAL, dwLightMarkerID, 0xff, 0x00);
-            draw_volume(cmd_list, L);
+            if (c16_use_point_path_near_omni)
+            {
+                // T2-diag: shade draws full sphere (no flat cap) for near OMNIPART, eliminate inconsistent cap winding.
+                cmd_list.set_Geometry(g_accum_point);
+                cmd_list.Render(D3DPT_TRIANGLELIST, 0, 0, DU_SPHERE_NUMVERTEX, 0, DU_SPHERE_NUMFACES);
+                static bool g_t2_full_sphere_logged = false;
+                if (!g_t2_full_sphere_logged)
+                {
+                    Msg("[T2] full_sphere_mask_and_shade_for_point_path_near_omni=1 type=%d shadow=%d marker=%u",
+                        static_cast<int>(L->flags.type),
+                        static_cast<int>(L->flags.bShadow),
+                        static_cast<unsigned>(dwLightMarkerID));
+                    g_t2_full_sphere_logged = true;
+                }
+            }
+            else
+            {
+                draw_volume(cmd_list, L);
+            }
         }
         else
         {
