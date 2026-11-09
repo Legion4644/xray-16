@@ -88,6 +88,37 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
         log_light_diag_impl("spot", L->flags.type, L->position.x, L->position.y, L->position.z, L->range, L->color.r, L->color.g, L->color.b, L->flags.bShadow, Device.dwFrame);
         enable_scissor(L);
         enable_dbt_bounds(L);
+        // C12-diag: clear scissor for near-camera shadowed OMNIPART to test rectangular scissor artifact.
+        bool c12_clear_scissor_near_omni = false;
+#if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+        if (L && L->flags.bShadow && L->flags.type == IRender_Light::OMNIPART)
+        {
+            Fvector c12_viewpos;
+            Device.mView.transform_tiny(c12_viewpos, L->position);
+            float c12_dist = _sqrt(_sqr(c12_viewpos.x) + _sqr(c12_viewpos.y) + _sqr(c12_viewpos.z));
+            if (c12_dist < 2.0f)
+            {
+                c12_clear_scissor_near_omni = true;
+                static bool g_c12_clear_scissor_near_omni_logged = false;
+                if (!g_c12_clear_scissor_near_omni_logged)
+                {
+                    Msg("[C12] clear_scissor_near_omni_shadowed=1 type=%d shadow=%d dist=%.2f range=%.2f marker=%u smap=(%d,%d,%d,%d)",
+                        static_cast<int>(L->flags.type),
+                        static_cast<int>(L->flags.bShadow),
+                        c12_dist,
+                        L->range,
+                        static_cast<unsigned>(dwLightMarkerID),
+                        static_cast<int>(L->X.S.posX),
+                        static_cast<int>(L->X.S.posY),
+                        static_cast<int>(L->X.S.size),
+                        static_cast<int>(L->X.S.transluent));
+                    g_c12_clear_scissor_near_omni_logged = true;
+                }
+            }
+        }
+#endif
+        if (c12_clear_scissor_near_omni)
+            cmd_list.set_Scissor(0);
 
         // *** similar to "Carmack's reverse", but assumes convex, non intersecting objects,
         // *** thus can cope without stencil clear with 127 lights
