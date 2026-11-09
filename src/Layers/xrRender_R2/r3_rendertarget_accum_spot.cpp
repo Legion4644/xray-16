@@ -163,7 +163,40 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
         // *** in practice, 'cause we "clear" it back to 0x1 it usually allows us to > 200 lights :)
         //	Done in blender!
         // cmd_list.set_ColorWriteEnable		(FALSE);
-    cmd_list.set_Element(s_accum_mask->E[SE_MASK_SPOT]); // masker
+    // C16-diag: route near-camera shadowed OMNIPART through point-style mask/shade to avoid spot projective shadow path.
+    bool c16_use_point_path_near_omni = false;
+#if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+    if (L && L->flags.bShadow && L->flags.type == IRender_Light::OMNIPART)
+    {
+        Fvector c16_viewpos;
+        Device.mView.transform_tiny(c16_viewpos, L->position);
+        float c16_dist = _sqrt(_sqr(c16_viewpos.x) + _sqr(c16_viewpos.y) + _sqr(c16_viewpos.z));
+        if (c16_dist < 2.0f)
+        {
+            c16_use_point_path_near_omni = true;
+            static bool g_c16_use_point_path_near_omni_logged = false;
+            if (!g_c16_use_point_path_near_omni_logged)
+            {
+                Msg("[C16] use_point_path_near_omni_shadowed=1 type=%d shadow=%d dist=%.2f range=%.2f marker=%u smap=(%d,%d,%d,%d)",
+                    static_cast<int>(L->flags.type),
+                    static_cast<int>(L->flags.bShadow),
+                    c16_dist,
+                    L->range,
+                    static_cast<unsigned>(dwLightMarkerID),
+                    static_cast<int>(L->X.S.posX),
+                    static_cast<int>(L->X.S.posY),
+                    static_cast<int>(L->X.S.size),
+                    static_cast<int>(L->X.S.transluent));
+                g_c16_use_point_path_near_omni_logged = true;
+            }
+        }
+    }
+#endif
+
+    if (c16_use_point_path_near_omni)
+        cmd_list.set_Element(s_accum_mask->E[SE_MASK_POINT]); // masker point-style for near OMNIPART
+    else
+        cmd_list.set_Element(s_accum_mask->E[SE_MASK_SPOT]); // masker
 
         // backfaces: if (stencil>=1 && zfail)			stencil = light_id
         cmd_list.set_CullMode(CULL_CW);
@@ -315,6 +348,9 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
     }
 #endif
 
+    if (c16_use_point_path_near_omni)
+        c15_skip_shade_near_omni = false;
+
     // Draw volume with projective texgen
     if (!c15_skip_shade_near_omni)
     {
@@ -380,11 +416,19 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
         float att_factor = 1.f / (att_R * att_R);
         cmd_list.set_c("Ldynamic_pos", L_pos.x, L_pos.y, L_pos.z, att_factor);
         cmd_list.set_c("Ldynamic_color", L_clr.x, L_clr.y, L_clr.z, L_spec);
-        cmd_list.set_c("m_texgen", m_Texgen);
-        cmd_list.set_c("m_texgen_J", m_Texgen_J);
-        cmd_list.set_c("m_shadow", m_Shadow);
-        cmd_list.set_ca("m_lmap", 0, m_Lmap._11, m_Lmap._21, m_Lmap._31, m_Lmap._41);
-        cmd_list.set_ca("m_lmap", 1, m_Lmap._12, m_Lmap._22, m_Lmap._32, m_Lmap._42);
+        if (c16_use_point_path_near_omni)
+        {
+            // C16: point-style shade constants, no projective shadow/lmap/jitter.
+            cmd_list.set_c("m_texgen", m_Texgen);
+        }
+        else
+        {
+            cmd_list.set_c("m_texgen", m_Texgen);
+            cmd_list.set_c("m_texgen_J", m_Texgen_J);
+            cmd_list.set_c("m_shadow", m_Shadow);
+            cmd_list.set_ca("m_lmap", 0, m_Lmap._11, m_Lmap._21, m_Lmap._31, m_Lmap._41);
+            cmd_list.set_ca("m_lmap", 1, m_Lmap._12, m_Lmap._22, m_Lmap._32, m_Lmap._42);
+        }
 
         // Fetch4 : enable
         //		if (RImplementation.o.HW_smap_FETCH4)	{
@@ -444,7 +488,7 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
     }
 
     // blend-copy
-    if (!RImplementation.o.fp16_blend && !c15_skip_shade_near_omni)
+    if (!RImplementation.o.fp16_blend && !c15_skip_shade_near_omni && !c16_use_point_path_near_omni)
     {
         u_setrt(cmd_list, rt_Accumulator, nullptr, nullptr, rt_MSAADepth);
         cmd_list.set_Element(s_accum_mask->E[SE_MASK_ACCUM_VOL]);
