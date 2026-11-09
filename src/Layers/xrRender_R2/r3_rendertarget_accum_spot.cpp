@@ -9,6 +9,8 @@ namespace xray::render::RENDER_NAMESPACE
 void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
 {
     phase_accumulator(cmd_list);
+    // C16-FIX: hoist point-path flag to function scope so it is visible after the mask block.
+    bool c16_use_point_path_near_omni = false;
     RImplementation.Stats.l_visible++;
 
     // *** assume accumulator already setup ***
@@ -164,7 +166,7 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
         //	Done in blender!
         // cmd_list.set_ColorWriteEnable		(FALSE);
     // C16-diag: route near-camera shadowed OMNIPART through point-style mask/shade to avoid spot projective shadow path.
-    bool c16_use_point_path_near_omni = false;
+    // C16-FIX: declaration hoisted to function scope; assign here only.
 #if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
     if (L && L->flags.bShadow && L->flags.type == IRender_Light::OMNIPART)
     {
@@ -194,9 +196,13 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
 #endif
 
     if (c16_use_point_path_near_omni)
+    {
         cmd_list.set_Element(s_accum_mask->E[SE_MASK_POINT]); // masker point-style for near OMNIPART
+    }
     else
+    {
         cmd_list.set_Element(s_accum_mask->E[SE_MASK_SPOT]); // masker
+    }
 
         // backfaces: if (stencil>=1 && zfail)			stencil = light_id
         cmd_list.set_CullMode(CULL_CW);
@@ -349,7 +355,9 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
 #endif
 
     if (c16_use_point_path_near_omni)
+    {
         c15_skip_shade_near_omni = false;
+    }
 
     // Draw volume with projective texgen
     if (!c15_skip_shade_near_omni)
