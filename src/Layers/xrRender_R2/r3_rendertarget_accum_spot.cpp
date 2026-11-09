@@ -447,6 +447,20 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
 
         if (!RImplementation.o.msaa)
         {
+            if (c16_use_point_path_near_omni)
+            {
+                // C18A-diag: force camera projection for point-style near OMNIPART shade, isolate shadow/projective xform.
+                cmd_list.set_xform_project(Device.mProject);
+                static bool g_c18a_force_camera_projection_logged = false;
+                if (!g_c18a_force_camera_projection_logged)
+                {
+                    Msg("[C18A] force_camera_projection_for_point_path_near_omni=1 type=%d shadow=%d marker=%u",
+                        static_cast<int>(L->flags.type),
+                        static_cast<int>(L->flags.bShadow),
+                        static_cast<unsigned>(dwLightMarkerID));
+                    g_c18a_force_camera_projection_logged = true;
+                }
+            }
             cmd_list.set_Stencil(TRUE, D3DCMP_LESSEQUAL, dwLightMarkerID, 0xff, 0x00);
             draw_volume(cmd_list, L);
         }
