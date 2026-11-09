@@ -195,6 +195,60 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
         }
     }
 #endif
+    // R1-diag: dedup near-OMNI faces to eliminate 5x brightness multiplier.
+    // Token = Device.dwFrame (confirmed in Light_DB.cpp add_light and r3_R_rain.cpp).
+    // Group key = dwFrame + position + range + color (6 omnipart faces share these; differ only in direction/right).
+    // Squared-diff comparison: zero dependency on _abs/fabsf macros.
+    if (c16_use_point_path_near_omni)
+    {
+        static u32 g_r1_last_frame = 0;
+        static bool g_r1_skip_logged = false;
+        static Fvector g_r1_last_pos;
+        static float g_r1_last_range = 0.f;
+        static Fvector g_r1_last_color;
+
+        u32 cur_frame = Device.dwFrame;
+        bool same_group = false;
+
+        if (cur_frame == g_r1_last_frame)
+        {
+            float dx = L->position.x - g_r1_last_pos.x;
+            float dy = L->position.y - g_r1_last_pos.y;
+            float dz = L->position.z - g_r1_last_pos.z;
+            float d2 = dx*dx + dy*dy + dz*dz;
+            float dr = L->range - g_r1_last_range;
+            float dcx = L->color.r - g_r1_last_color.x;
+            float dcy = L->color.g - g_r1_last_color.y;
+            float dcz = L->color.b - g_r1_last_color.z;
+
+            same_group = (d2 < 0.01f && dr*dr < 0.0001f &&
+                          dcx*dcx < 0.0001f && dcy*dcy < 0.0001f && dcz*dcz < 0.0001f);
+        }
+
+        if (same_group)
+        {
+            if (!g_r1_skip_logged)
+            {
+                Msg("[R1] skip_duplicate_near_omni=1 frame=%u pos=(%.2f,%.2f,%.2f) range=%.2f marker=%u",
+                    static_cast<unsigned>(cur_frame),
+                    L->position.x, L->position.y, L->position.z,
+                    L->range,
+                    static_cast<unsigned>(dwLightMarkerID));
+                g_r1_skip_logged = true;
+            }
+            return;
+        }
+
+        g_r1_last_frame = cur_frame;
+        g_r1_last_pos.x = L->position.x;
+        g_r1_last_pos.y = L->position.y;
+        g_r1_last_pos.z = L->position.z;
+        g_r1_last_range = L->range;
+        g_r1_last_color.x = L->color.r;
+        g_r1_last_color.y = L->color.g;
+        g_r1_last_color.z = L->color.b;
+    }
+
 
     if (c16_use_point_path_near_omni)
     {
