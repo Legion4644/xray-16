@@ -13,16 +13,54 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
 
     // *** assume accumulator already setup ***
     // *****************************	Mask by stencil		*************************************
+    // C14-diag: force standard s_accum_point for near-camera shadowed OMNIPART, bypass L->s_point custom shader.
+    bool c14_force_standard_point_shader = false;
+#if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+    if (L && L->flags.bShadow && L->flags.type == IRender_Light::OMNIPART)
+    {
+        Fvector c14_viewpos;
+        Device.mView.transform_tiny(c14_viewpos, L->position);
+        float c14_dist = _sqrt(_sqr(c14_viewpos.x) + _sqr(c14_viewpos.y) + _sqr(c14_viewpos.z));
+        if (c14_dist < 2.0f)
+        {
+            c14_force_standard_point_shader = true;
+            static bool g_c14_force_standard_point_shader_logged = false;
+            if (!g_c14_force_standard_point_shader_logged)
+            {
+                Msg("[C14] force_standard_point_shader_near_omni_shadowed=1 type=%d shadow=%d dist=%.2f range=%.2f marker=%u smap=(%d,%d,%d,%d)",
+                    static_cast<int>(L->flags.type),
+                    static_cast<int>(L->flags.bShadow),
+                    c14_dist,
+                    L->range,
+                    static_cast<unsigned>(dwLightMarkerID),
+                    static_cast<int>(L->X.S.posX),
+                    static_cast<int>(L->X.S.posY),
+                    static_cast<int>(L->X.S.size),
+                    static_cast<int>(L->X.S.transluent));
+                g_c14_force_standard_point_shader_logged = true;
+            }
+        }
+    }
+#endif
+
     ref_shader shader;
     ref_shader* shader_msaa;
     if (IRender_Light::OMNIPART == L->flags.type)
     {
-        shader = L->s_point;
-        shader_msaa = L->s_point_msaa;
-        if (!shader)
+        if (c14_force_standard_point_shader)
         {
             shader = s_accum_point;
             shader_msaa = s_accum_point_msaa;
+        }
+        else
+        {
+            shader = L->s_point;
+            shader_msaa = L->s_point_msaa;
+            if (!shader)
+            {
+                shader = s_accum_point;
+                shader_msaa = s_accum_point_msaa;
+            }
         }
     }
     else
