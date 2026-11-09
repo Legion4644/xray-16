@@ -8,19 +8,6 @@ namespace xray::render::RENDER_NAMESPACE
 
 void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
 {
-    // C7-diag: disable ONLY shadowed OMNIPART accumulation to isolate family.
-    if (L && L->flags.bShadow && (L->flags.type == IRender_Light::OMNIPART))
-    {
-        static bool g_c7_omni_shadowed_accum_disabled_logged = false;
-        if (!g_c7_omni_shadowed_accum_disabled_logged)
-        {
-            Msg("[C7] omni_shadowed_accum_disabled=1 type=%d shadow=%d",
-                static_cast<int>(L->flags.type),
-                static_cast<int>(L->flags.bShadow));
-            g_c7_omni_shadowed_accum_disabled_logged = true;
-        }
-        return;
-    }
     phase_accumulator(cmd_list);
     RImplementation.Stats.l_visible++;
 
@@ -107,7 +94,21 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
         // *** in practice, 'cause we "clear" it back to 0x1 it usually allows us to > 200 lights :)
         //	Done in blender!
         // cmd_list.set_ColorWriteEnable		(FALSE);
-        cmd_list.set_Element(s_accum_mask->E[SE_MASK_SPOT]); // masker
+        // C8-diag: keep phase_accumulator/common setup, skip only shadowed OMNIPART mask/draw/shade accumulation.
+    if (L && L->flags.bShadow && (L->flags.type == IRender_Light::OMNIPART))
+    {
+        static bool g_c8_omni_shadowed_draw_shade_skipped_logged = false;
+        if (!g_c8_omni_shadowed_draw_shade_skipped_logged)
+        {
+            Msg("[C8] omni_shadowed_draw_shade_skipped_after_setup=1 type=%d shadow=%d",
+                static_cast<int>(L->flags.type),
+                static_cast<int>(L->flags.bShadow));
+            g_c8_omni_shadowed_draw_shade_skipped_logged = true;
+        }
+        return;
+    }
+
+    cmd_list.set_Element(s_accum_mask->E[SE_MASK_SPOT]); // masker
 
         // backfaces: if (stencil>=1 && zfail)			stencil = light_id
         cmd_list.set_CullMode(CULL_CW);
