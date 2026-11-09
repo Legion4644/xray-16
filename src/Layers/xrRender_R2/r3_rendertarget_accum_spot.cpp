@@ -285,7 +285,38 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
     Device.mView.transform_dir(L_dir, L->direction);
     L_dir.normalize();
 
+    // C15-diag: skip shade/draw_volume and blend-copy for near-camera shadowed OMNIPART to isolate mask vs shade.
+    bool c15_skip_shade_near_omni = false;
+#if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+    if (L && L->flags.bShadow && L->flags.type == IRender_Light::OMNIPART)
+    {
+        Fvector c15_viewpos;
+        Device.mView.transform_tiny(c15_viewpos, L->position);
+        float c15_dist = _sqrt(_sqr(c15_viewpos.x) + _sqr(c15_viewpos.y) + _sqr(c15_viewpos.z));
+        if (c15_dist < 2.0f)
+        {
+            c15_skip_shade_near_omni = true;
+            static bool g_c15_skip_shade_near_omni_logged = false;
+            if (!g_c15_skip_shade_near_omni_logged)
+            {
+                Msg("[C15] skip_shade_near_omni_shadowed=1 type=%d shadow=%d dist=%.2f range=%.2f marker=%u smap=(%d,%d,%d,%d)",
+                    static_cast<int>(L->flags.type),
+                    static_cast<int>(L->flags.bShadow),
+                    c15_dist,
+                    L->range,
+                    static_cast<unsigned>(dwLightMarkerID),
+                    static_cast<int>(L->X.S.posX),
+                    static_cast<int>(L->X.S.posY),
+                    static_cast<int>(L->X.S.size),
+                    static_cast<int>(L->X.S.transluent));
+                g_c15_skip_shade_near_omni_logged = true;
+            }
+        }
+    }
+#endif
+
     // Draw volume with projective texgen
+    if (!c15_skip_shade_near_omni)
     {
         // Select shader
         u32 _id = 0;
@@ -413,7 +444,7 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
     }
 
     // blend-copy
-    if (!RImplementation.o.fp16_blend)
+    if (!RImplementation.o.fp16_blend && !c15_skip_shade_near_omni)
     {
         u_setrt(cmd_list, rt_Accumulator, nullptr, nullptr, rt_MSAADepth);
         cmd_list.set_Element(s_accum_mask->E[SE_MASK_ACCUM_VOL]);
