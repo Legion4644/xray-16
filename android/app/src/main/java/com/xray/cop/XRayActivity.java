@@ -45,6 +45,10 @@ public class XRayActivity extends SDLActivity {
     private static final long POLL_INTERVAL_MS = 1500;
     private static final String FALLBACK_LOG_DIR = "/sdcard/XRay/logs";
 
+    private static final String LOG_OVERLAY_ENABLE_FILE = "/sdcard/XRay/enable_log_overlay.txt";
+    private static final String LOG_OVERLAY_ENABLE_FILE_ALT = "/storage/emulated/0/XRay/enable_log_overlay.txt";
+
+
     private static native String nativeGetLogDir();
 
     private TextView mLogView;
@@ -67,9 +71,11 @@ public class XRayActivity extends SDLActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         installJavaCrashHandler();
-        attachLogOverlay();
         ensureStorageAccess();
-        mHandler.post(mLogPoll);
+        if (logOverlayEnabled()) {
+            attachLogOverlay();
+            mHandler.post(mLogPoll);
+        }
     }
 
     @Override
@@ -185,6 +191,11 @@ public class XRayActivity extends SDLActivity {
     // ------------------------------------------------------------------
     // On-screen log overlay
     // ------------------------------------------------------------------
+
+    private boolean logOverlayEnabled() {
+        return new File(LOG_OVERLAY_ENABLE_FILE).exists()
+            || new File(LOG_OVERLAY_ENABLE_FILE_ALT).exists();
+    }
 
     private void attachLogOverlay() {
         if (mLogView != null) {
