@@ -201,20 +201,31 @@ void CSoundRender_Scene::play_no_feedback(
 
 void CSoundRender_Scene::play_at_pos(ref_sound& S, IGameObject* O, const Fvector& pos, u32 flags, float delay)
 {
+    // H13_106_BACKEND_GUARD soundrender_null_and_feedback_null
+#if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+    if (!SoundRender || !SoundRender->bPresent || !S._handle())
+        return;
+#else
     if (!SoundRender->bPresent || !S._handle())
         return;
+#endif
     S->g_object = O;
     if (S._feedback())
         ((CSoundRender_Emitter*)S._feedback())->rewind();
     else
         i_play(S, flags, delay);
 
-    S._feedback()->set_position(pos);
+    auto* h13_fb = S._feedback();
+#if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+    if (!h13_fb)
+        return;
+#endif
+    h13_fb->set_position(pos);
 
     if (flags & sm_2D || S._handle()->channels_num() == 2)
-        S._feedback()->switch_to_2D();
+        h13_fb->switch_to_2D();
 
-    S._feedback()->set_ignore_time_factor(flags & sm_IgnoreTimeFactor);
+    h13_fb->set_ignore_time_factor(flags & sm_IgnoreTimeFactor);
 }
 
 CSoundRender_Emitter* CSoundRender_Scene::i_play(ref_sound& S, u32 flags, float delay)

@@ -159,11 +159,28 @@ bool CSoundPlayer::need_bone_data() const
 void CSoundPlayer::play(
     u32 internal_type, u32 max_start_time, u32 min_start_time, u32 max_stop_time, u32 min_stop_time, u32 id)
 {
+    // H13_106_CRASH_GUARD m_object
+#if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+    if (!m_object)
+    {
+        Msg("[H13_106] CSoundPlayer::play abort m_object=null internal_type=%u id=%u", internal_type, id);
+        return;
+    }
+#endif
+
     if (!check_sound_legacy(internal_type))
         return;
 
     SOUND_COLLECTIONS::iterator I = m_sounds.find(internal_type);
     VERIFY(m_sounds.end() != I);
+    // H13_106_CRASH_GUARD collection_null
+#if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+    if (I == m_sounds.end() || !(*I).second.second)
+    {
+        Msg("[H13_106] CSoundPlayer::play abort missing_sound_collection internal_type=%u id=%u", internal_type, id);
+        return;
+    }
+#endif
     CSoundCollectionParamsFull& sound = (*I).second.first;
     if ((*I).second.second->m_sounds.empty())
     {
@@ -178,8 +195,26 @@ void CSoundPlayer::play(
 
     CSoundSingle sound_single;
     (CSoundParams&)sound_single = (CSoundParams&)sound;
-    sound_single.m_bone_id = smart_cast<IKinematics*>(m_object->Visual())->LL_BoneID(sound.m_bone_name);
+    IKinematics* h13_kin = smart_cast<IKinematics*>(m_object->Visual());
+    // H13_106_CRASH_GUARD kinematics_null
+#if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+    if (!h13_kin)
+    {
+        Msg("[H13_106] CSoundPlayer::play abort kinematics_null internal_type=%u id=%u", internal_type, id);
+        return;
+    }
+#endif
+    sound_single.m_bone_id = h13_kin->LL_BoneID(sound.m_bone_name);
+    // H13_106_CRASH_GUARD bone_none
+#if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+    if (sound_single.m_bone_id == BI_NONE)
+    {
+        Msg("[H13_106] CSoundPlayer::play abort bone_none internal_type=%u id=%u", internal_type, id);
+        return;
+    }
+#else
     R_ASSERT(sound_single.m_bone_id != BI_NONE);
+#endif
 
     sound_single.m_sound = xr_new<ref_sound>();
     /**
@@ -197,10 +232,30 @@ void CSoundPlayer::play(
         sg_SourceType
     );
     **/
-    sound_single.m_sound->clone((*I).second.second->random(id), st_Effect, sg_SourceType);
+    const ref_sound& h13_src = (*I).second.second->random(id);
+    // H13_106_CRASH_GUARD clone_source_null
+#if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+    if (!h13_src._handle())
+    {
+        Msg("[H13_106] CSoundPlayer::play abort clone_source_null internal_type=%u id=%u", internal_type, id);
+        xr_delete(sound_single.m_sound);
+        return;
+    }
+#endif
+    sound_single.m_sound->clone(h13_src, st_Effect, sg_SourceType);
 
-    sound_single.m_sound->_get()->g_object = m_object;
-    sound_single.m_sound->_get()->g_userdata = (*I).second.first.m_data;
+    auto* h13_isound = sound_single.m_sound->_get();
+    // H13_106_CRASH_GUARD isound_null
+#if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+    if (!h13_isound)
+    {
+        Msg("[H13_106] CSoundPlayer::play abort isound_null internal_type=%u id=%u", internal_type, id);
+        xr_delete(sound_single.m_sound);
+        return;
+    }
+#endif
+    h13_isound->g_object = m_object;
+    h13_isound->g_userdata = (*I).second.first.m_data;
     VERIFY(sound_single.m_sound->_handle());
 
     VERIFY(max_start_time >= min_start_time);
@@ -223,7 +278,19 @@ void CSoundPlayer::play(
     m_playing_sounds.push_back(sound_single);
 
     if (Device.dwTimeGlobal >= m_playing_sounds.back().m_start_time)
-        m_playing_sounds.back().play_at_pos(m_object, compute_sound_point(m_playing_sounds.back()));
+    {
+        CSoundSingle& h13_back = m_playing_sounds.back();
+        // H13_106_CRASH_GUARD play_at_pos_precondition
+#if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+        if (!h13_back.m_sound || !m_object)
+        {
+            Msg("[H13_106] CSoundPlayer::play abort play_at_pos_precondition internal_type=%u id=%u sound=%p object=%p",
+                internal_type, id, (void*)h13_back.m_sound, (void*)m_object);
+            return;
+        }
+#endif
+        h13_back.play_at_pos(m_object, compute_sound_point(h13_back));
+    }
 }
 
 IC Fvector CSoundPlayer::compute_sound_point(const CSoundSingle& sound)
