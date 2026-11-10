@@ -110,7 +110,13 @@ CSound* CSoundRender_Core::create(pcstr fName, esound_type sound_type, u32 game_
 
     CSoundRender_Source* handle = i_create_source(fn);
     if (!handle)
+    {
+#if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+        Msg("[H13_107] CSoundRender_Core::create i_create_source_null fName=%s fn=%s sound_type=%u game_type=%u",
+            fName ? fName : "(null)", fn, (u32)sound_type, game_type);
+#endif
         return nullptr;
+    }
 
     auto* snd = xr_new<CSound>(handle);
 

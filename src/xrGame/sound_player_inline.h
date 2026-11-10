@@ -45,6 +45,15 @@ IC u32 CSoundPlayer::active_sound_count(bool only_playing) const
 IC ref_sound* CSoundPlayer::CSoundCollection::add(ESoundTypes type, LPCSTR name) const
 {
     ref_sound* temp = xr_new<ref_sound>();
+#if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+    bool h13_ok = temp->create(name, st_Effect, type);
+    if (!h13_ok)
+    {
+        xr_delete(temp);
+        return nullptr;
+    }
+    return temp;
+#else
     temp->create(name, st_Effect, type);
     if (!temp)
     {
@@ -52,6 +61,7 @@ IC ref_sound* CSoundPlayer::CSoundCollection::add(ESoundTypes type, LPCSTR name)
         return nullptr;
     }
     return temp;
+#endif
 }
 
 IC const CSoundPlayer::SOUND_COLLECTIONS& CSoundPlayer::objects() const { return (m_sounds); }

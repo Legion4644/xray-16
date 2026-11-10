@@ -274,6 +274,33 @@ bool CSoundRender_Source::load(pcstr name)
     fname = N;
 
     strconcat(fn, N, ".ogg");
+
+#if defined(__ANDROID__) || defined(ANDROID) || defined(PLATFORM_ANDROID)
+    bool h13_level_hit = FS.exist("$level$", fn);
+    if (!h13_level_hit)
+    {
+        FS.update_path(fn, "$game_sounds$", fn);
+    }
+    else
+    {
+        Msg("[H13_107] load level_pack_hit name=%s fn=%s", name, fn);
+    }
+
+    bool h13_exist = FS.exist(fn);
+    if (!h13_exist)
+    {
+        Msg("[H13_107] load path_not_found name=%s fn=%s", name, fn);
+        return false;
+    }
+
+    if (!LoadWave(fn))
+    {
+        Msg("[H13_107] load loadwave_failed name=%s fn=%s", name, fn);
+        return false;
+    }
+
+    return true;
+#else
     if (!FS.exist("$level$", fn))
         FS.update_path(fn, "$game_sounds$", fn);
 
@@ -294,6 +321,7 @@ bool CSoundRender_Source::load(pcstr name)
     }
 
     return false;
+#endif
 }
 
 void CSoundRender_Source::unload()
