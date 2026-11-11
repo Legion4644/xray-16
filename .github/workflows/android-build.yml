@@ -25,18 +25,18 @@ jobs:
           submodules: recursive
 
       - name: Install host tools for LuaJIT
-          run: |
-            if command -v gcc >/dev/null 2>&1 && command -v g++ >/dev/null 2>&1 && command -v make >/dev/null 2>&1; then
-              echo "Host toolchain (gcc/g++/make) already present; skipping apt install."
-              exit 0
-            fi
-            echo "Host toolchain missing; attempting apt install with network tolerance."
-            sudo apt-get update -qq || echo "WARN: apt-get update partial failure (transient network); continuing."
-            sudo apt-get install -qq -y --no-install-recommends build-essential || {
-              echo "ERROR: could not install build-essential and host toolchain is missing."
-              echo "gcc:$(command -v gcc || echo none) g++:$(command -v g++ || echo none) make:$(command -v make || echo none)"
-              exit 1
-            }
+        run: |
+          if command -v gcc >/dev/null 2>&1 && command -v g++ >/dev/null 2>&1 && command -v make >/dev/null 2>&1; then
+            echo "Host toolchain (gcc/g++/make) already present; skipping apt install."
+            exit 0
+          fi
+          echo "Host toolchain missing; attempting apt install with network tolerance."
+          sudo apt-get update -qq || echo "WARN: apt-get update partial failure (transient network); continuing."
+          sudo apt-get install -qq -y --no-install-recommends build-essential || {
+            echo "ERROR: could not install build-essential and host toolchain is missing."
+            echo "gcc:$(command -v gcc || echo none) g++:$(command -v g++ || echo none) make:$(command -v make || echo none)"
+            exit 1
+          }
 
       - name: Setup NDK
         uses: nttld/setup-ndk@v1
