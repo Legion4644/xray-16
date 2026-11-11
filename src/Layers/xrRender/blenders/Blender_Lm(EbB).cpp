@@ -247,7 +247,7 @@ void CBlender_LmEbB::CompileProgrammable(CBlender_Compile& C) const
         C.r_dx11Texture("s_env", oT2_Name);
 #else
         C.r_Sampler("s_base", C.L_textures[0]);
-        C.r_Sampler("s_lmap", C.L_textures[1]);
+        C.r_Sampler("s_lmap", C.L_textures[1], false, D3DTADDRESS_CLAMP);
         C.r_Sampler_clf("s_hemi", C.L_textures[2].c_str());
         C.r_Sampler("s_env", oT2_Name, false, D3DTADDRESS_CLAMP);
 #endif
