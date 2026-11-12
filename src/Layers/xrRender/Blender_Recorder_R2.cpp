@@ -1,3 +1,4 @@
+#include "Layers/xrRenderGL/glLightDiag.h"
 #include "stdafx.h"
 #pragma hdrstop
 
@@ -188,6 +189,7 @@ u32 CBlender_Compile::r_Sampler(
 #endif
 
         // Sampler states
+    LightDiag::LogSamplerRequest(_name, dwStage, address);
         i_Address(dwStage, address);
         i_Filter(dwStage, fmin, fmip, fmag);
         //.i_Filter				(dwStage,D3DTEXF_POINT,D3DTEXF_POINT,D3DTEXF_POINT); // show pixels

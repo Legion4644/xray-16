@@ -1,3 +1,4 @@
+#include "Layers/xrRenderGL/glLightDiag.h"
 #include "stdafx.h"
 
 #include "Layers/xrRender/dxRenderFactory.h"
@@ -93,11 +94,13 @@ public:
         rdebug_render->Register();
 #endif
         xrRender_initconsole();
+    LightDiag::Open();
     }
 
     void ClearEnv() override
     {
         modes.clear();
+    LightDiag::Close();
 
         if (GEnv.Render == &RImplementation)
         {

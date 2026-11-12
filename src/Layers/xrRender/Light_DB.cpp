@@ -1,3 +1,4 @@
+#include "Layers/xrRenderGL/glLightDiag.h"
 #include "stdafx.h"
 #include "Common/_d3d_extensions.h"
 #include "Common/LevelStructure.hpp"
@@ -163,6 +164,7 @@ void CLight_DB::add_light(light* L)
         L->flags.bShadow = FALSE;
     if (L->flags.bStatic && !ps_r2_ls_flags.test(R2FLAG_R1LIGHTS))
         return;
+        LightDiag::LogLightStatic(L->flags.bStatic, (L->type == IRender_Light::LT_POINT));
     L->Export(package);
 #endif
 }

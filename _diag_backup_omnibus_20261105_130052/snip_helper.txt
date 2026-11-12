@@ -1,0 +1,56 @@
+namespace {
+struct PLightSig { const void* ptr; float px, py, pz, range; };
+PLightSig g_ld_sig[128];
+int g_ld_count = 0;
+bool g_ld_checked = false;
+bool g_ld_enabled = false;
+u32 g_ld_calls = 0;
+} // namespace
+static void log_light_diag(const light* L, const char* tag)
+{
+    if (!g_ld_checked)
+    {
+        g_ld_checked = true;
+        FILE* f = fopen("/storage/emulated/0/XRay/render_diag.txt", "rb");
+        if (f)
+        {
+            fclose(f);
+            g_ld_enabled = true;
+        }
+        else
+            g_ld_enabled = false;
+    }
+    if (!g_ld_enabled || g_ld_calls >= 400)
+        return;
+    int slot = -1;
+    for (int i = 0; i < g_ld_count; ++i)
+        if (g_ld_sig[i].ptr == static_cast<const void*>(L))
+        {
+            slot = i;
+            break;
+        }
+    const bool isNew = (slot < 0);
+    if (isNew)
+    {
+        if (g_ld_count >= 128)
+            return;
+        slot = g_ld_count++;
+        g_ld_sig[slot].ptr = static_cast<const void*>(L);
+        g_ld_sig[slot].px = 1e30f;
+        g_ld_sig[slot].py = 1e30f;
+        g_ld_sig[slot].pz = 1e30f;
+        g_ld_sig[slot].range = -1.f;
+    }
+    PLightSig& s = g_ld_sig[slot];
+    const bool moved = _abs(s.px - L->position.x) > 0.1f || _abs(s.py - L->position.y) > 0.1f || _abs(s.pz - L->position.z) > 0.1f || _abs(s.range - L->range) > 0.1f;
+    if (!moved)
+        return;
+    s.px = L->position.x;
+    s.py = L->position.y;
+    s.pz = L->position.z;
+    s.range = L->range;
+    ++g_ld_calls;
+    Msg("[LIGHTDIAG] %s tag=%s type=%d pos=(%.2f,%.2f,%.2f) range=%.2f color=(%.2f,%.2f,%.2f) shadow=%d frame=%u",
+        isNew ? "NEW" : "MOVE", tag, (int)L->flags.type, L->position.x, L->position.y, L->position.z, L->range,
+        L->color.r, L->color.g, L->color.b, (int)L->flags.bShadow, Device.dwFrame);
+}

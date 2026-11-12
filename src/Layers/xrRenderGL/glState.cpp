@@ -1,3 +1,4 @@
+#include "Layers/xrRenderGL/glLightDiag.h"
 #include "stdafx.h"
 #include "glState.h"
 
@@ -64,6 +65,8 @@ void glState::Apply()
             glBindSampler(stage, m_samplerArray[stage]);
 #endif
 
+
+            LightDiag::LogSamplerBinding(stage, m_samplerArray[stage]);
             if (!fsimilar(m_uiMipLODBias, ps_r__tf_Mipbias))
             {
                 CHK_GL(glSamplerParameterf(m_samplerArray[stage], GL_TEXTURE_MIN_LOD, 0.f));
@@ -122,6 +125,7 @@ void glState::Apply()
 void glState::Release()
 {
     // Delete any generated samplers in the array
+    LightDiag::Close();
     CHK_GL(glDeleteSamplers(CTexture::mtMaxCombinedShaderTextures, m_samplerArray));
 
     // Clear the sampler array

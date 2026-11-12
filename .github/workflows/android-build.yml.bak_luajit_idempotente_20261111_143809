@@ -1,0 +1,168 @@
+name: Android
+
+on:
+  push:
+    branches:
+      - android-port
+      - android-port-glrender
+      - dev
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  android-arm64:
+    name: Android arm64-v8a API 26 (NDK + APK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    env:
+      CFLAGS: "-w"
+      CXXFLAGS: "-w"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install host tools for LuaJIT
+        run: sudo apt-get update -qq && sudo apt-get install -qq -y build-essential
+
+      - name: Setup NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26d
+          link-to-sdk: true
+
+      - name: Configure
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          cmake -B build-android \
+            -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-26 \
+            -DANDROID_STL=c++_shared \
+            -DCMAKE_BUILD_TYPE=ReleaseMasterGold \
+            -DBUILD_SHARED_LIBS=ON \
+            -DXRAY_USE_LUAJIT=ON \
+            -DCMAKE_UNITY_BUILD=ON \
+            -DCMAKE_SHARED_LINKER_FLAGS="-lGLESv3 -lGLESv2 -lGLESv1_CM -lEGL -llog -landroid" \
+            -DCMAKE_INSTALL_PREFIX="${PWD}/install-android" \
+            -DXR_ANDROID_GLRENDER=${{ github.ref_name == 'android-port-glrender' && 'ON' || 'OFF' }} \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
+      - name: Build
+        run: cmake --build build-android --config ReleaseMasterGold --parallel 4
+
+      - name: Collect native libraries
+        run: |
+          mkdir -p dist/arm64-v8a
+          find build-android bin -type f \( -name '*.so' -o -name '*.a' \) -print -exec cp -n {} dist/arm64-v8a/ \; || true
+          ls -la dist/arm64-v8a || true
+
+      - name: Upload native libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-arm64-v8a
+          path: dist/arm64-v8a
+          if-no-files-found: warn
+
+      - name: Collect debug symbols
+        if: github.ref_name == 'android-port-glrender'
+        run: |
+          mkdir -p dist/glrender-symbols
+          find build-android bin -type f -name '*.so' -print -exec cp -n {} dist/glrender-symbols/ \; || true
+          ls -la dist/glrender-symbols || true
+
+      - name: Upload debug symbols
+        if: github.ref_name == 'android-port-glrender'
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-glrender-symbols
+          path: dist/glrender-symbols
+          if-no-files-found: warn
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK platform and build-tools
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Setup Gradle
+        run: |
+          set -e
+          curl -fsSL -o /tmp/gradle-8.7.zip https://services.gradle.org/distributions/gradle-8.7-bin.zip
+          mkdir -p "$HOME/gradle-dist"
+          unzip -q /tmp/gradle-8.7.zip -d "$HOME/gradle-dist"
+          echo "$HOME/gradle-dist/gradle-8.7/bin" >> "$GITHUB_PATH"
+          "$HOME/gradle-dist/gradle-8.7/bin/gradle" --version
+
+      - name: Prepare jniLibs
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          set -e
+          DEST=android/app/src/main/jniLibs/arm64-v8a
+          mkdir -p "$DEST"
+          find bin build-android -type f -name '*.so' -print -exec cp -n {} "$DEST/" \;
+          cp "${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" "$DEST/"
+          ls -la "$DEST"
+          if [ ! -f "$DEST/libxr_3da.so" ]; then echo "ERROR: libxr_3da.so not found among copied libs"; exit 1; fi
+
+      - name: Build debug APK
+        working-directory: android
+        run: gradle --no-daemon assembleDebug
+
+      - name: Rename APK
+        run: |
+          mkdir -p apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk apk/xray-cop-debug.apk
+          ls -la apk
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.ref_name == 'android-port-glrender' && 'android-debug-glrender-apk' || 'android-debug-apk' }}
+          path: apk/xray-cop-debug.apk
+          if-no-files-found: error
+
+      - name: Publish debug APK to Releases
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name == 'android-port-glrender' && 'android-debug-glrender' || 'android-debug' }}
+          name: ${{ github.ref_name == 'android-port-glrender' && 'Android debug glrender build' || 'Android debug build' }}
+          body: |
+            Automated debug APK built from the `${{ github.ref_name }}` branch.
+
+            Install it on an arm64-v8a device, copy the game folder to
+            `/sdcard/XRay/gamedata`, then open the app and grant all-files
+            access. Logs are written to `/sdcard/XRay/logs/`.
+          files: apk/xray-cop-debug.apk
+          prerelease: true
+          fail_on_unmatched_files: true
+
+      - name: GLRENDER-PROBE (diagnostic)
+        if: github.ref_name == 'android-port-glrender'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DIR=$(find build-android -type d -name 'xrRender_GL.dir' 2>/dev/null | head -1)
+          OUT=$(find build-android -type f \( -name 'xrRender_GL.a' -o -name 'xrRender_GL.so' \) 2>/dev/null | head -5 | tr '\n' ' ')
+          if [ -n "$DIR" ]; then BUILT=YES; else BUILT=NO; fi
+          LINE="GLRENDER-PROBE: XRRENDER_GL_BUILT=$BUILT dir=${DIR:-NONE} out=${OUT:-NONE}"
+          echo "$LINE"
+          TMP_NOTES=$(mktemp)
+          gh release view android-debug-glrender --json body -q .body > "$TMP_NOTES" 2>/dev/null || true
+          printf '\n%s\n' "$LINE" >> "$TMP_NOTES"
+          gh release edit android-debug-glrender --notes-file "$TMP_NOTES" 2>/dev/null || echo "WARN: gh release edit failed"
+          rm -f "$TMP_NOTES"

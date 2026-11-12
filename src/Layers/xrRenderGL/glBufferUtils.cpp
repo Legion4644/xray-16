@@ -1,4 +1,6 @@
+#include "Layers/xrRenderGL/glLightDiag.h"
 #include "stdafx.h"
+#include <string>
 #include "Layers/xrRender/BufferUtils.h"
 
 #include <FlexibleVertexFormat.h>
@@ -161,6 +163,7 @@ void IterVertexDeclaration(const VertexElement* dxdecl, F&& callback)
             continue; // Unsupported
 
         location += desc.UsageIndex;
+        LightDiag::LogVertexAttribute("TEXCOORD" + std::to_string(desc.UsageIndex), location, type, normalized);
         callback(location, size, type, normalized, desc.Offset, desc.Stream);
     }
 }
